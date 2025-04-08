@@ -1,0 +1,53 @@
+# Data directories (anywhere in the project)
+**/data/md_agreement/
+**/data/sentiment_analysis/
+**/processed/
+**/results/
+**/logs/
+wandb/
+outputs/
+
+# Keep .gitkeep files
+!.gitkeep
+
+# Model files and caches
+models/checkpoints/
+*.pt
+*.pth
+*.bin
+*.ckpt
+*.h5
+transformers_cache/
+pretrained_models/
+.cache/
+__pycache__/
+*.py[cod]
+
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
+.conda/
+*.conda
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+*.out
+*.err 
