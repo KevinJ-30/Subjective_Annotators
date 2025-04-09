@@ -2,7 +2,7 @@
 
 This repository contains two projects for comparing different approaches to handling subjective tasks:
 
-1. Medical Decision Agreement (MD Agreement)
+1. Multi Domain Agreement (MD Agreement)
 2. Sentiment Analysis
 
 ## Project Structure
@@ -40,7 +40,7 @@ pip install -r sentiment_analysis_comparison/requirements.txt
 
 ## Running Experiments
 
-### Medical Decision Agreement
+### Multi Domain Agreement
 
 1. Download the dataset:
 ```bash
@@ -112,7 +112,7 @@ Results are saved in the following locations:
 
 ## Data Structure
 
-### Medical Decision Agreement
+### Multi Domain Agreement
 - Binary classification task
 - Each example has multiple annotator labels
 - Labels are binary (0 or 1)
