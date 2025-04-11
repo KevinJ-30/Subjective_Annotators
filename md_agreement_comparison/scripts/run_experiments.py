@@ -9,6 +9,8 @@ import sys
 import logging
 import traceback
 import numpy as np
+import pandas as pd
+import uuid
 
 # Create logs directory if it doesn't exist
 os.makedirs('logs', exist_ok=True)
@@ -68,59 +70,59 @@ def setup_config(approach, add_noise=False, noise_level=0.2, use_grouping=False,
     
     return config
 
-def run_single_experiment(approach, add_noise=False, noise_level=0.2, use_grouping=False, annotators_per_group=4):
-    logging.info(f"\n=== Running {approach.upper()} Experiment ===")
-    
+def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=0.2, use_grouping=False, annotators_per_group=4, use_weighted_embeddings=False):
+    """Run a single experiment with the specified approach"""
     try:
-        # Setup configuration with noise parameters
-        config = setup_config(approach, add_noise, noise_level, use_grouping, annotators_per_group)
+        logging.info(f"\nStarting experiment for {approach}")
         
-        # Determine model class based on approach
-        model_class = {
-            'majority_vote': MajorityVoteModel,
-            'aart': AARTModel,
-            'multitask': MultitaskModel,
-            'annotator_embedding': AnnotatorEmbeddingModel
-        }[approach]
+        # Create config
+        config = setup_config(
+            approach=approach, 
+            add_noise=add_noise, 
+            noise_level=noise_level, 
+            use_grouping=use_grouping, 
+            annotators_per_group=annotators_per_group
+        )
         
-        # Check if data exists
-        data_path = Path("data/md_agreement/processed")
-        if not data_path.exists() or not list(data_path.glob("*.json")):
-            logging.error("Data not found. Please run download_data.py first")
-            raise FileNotFoundError("Dataset files not found")
+        # Set weighted embeddings if requested
+        if use_weighted_embeddings:
+            config.use_weighted_embeddings = True
+            
+        # Set experiment ID and directories
+        config.experiment_id = experiment_id
+        config.checkpoint_dir = Path(f"experiments/{experiment_id}/models/checkpoints/{approach}")
+        config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Set data paths in config
+        config.train_path = 'data/md_agreement/processed/train.json'
+        config.test_path = 'data/md_agreement/processed/test.json'
+        
+        # Create trainer
+        if approach == 'majority_vote':
+            trainer = Trainer(config, MajorityVoteModel)
+        elif approach == 'aart':
+            trainer = Trainer(config, AARTModel)
+        elif approach == 'multitask':
+            trainer = Trainer(config, MultitaskModel)
+        elif approach == 'annotator_embedding':
+            trainer = Trainer(config, AnnotatorEmbeddingModel)
+        else:
+            raise ValueError(f"Unknown approach: {approach}")
         
         # Train and evaluate
-        trainer = Trainer(config, model_class)
-        metrics = trainer.train()  # This now returns the evaluation metrics
+        results = trainer.train()
         
-        # Log metrics
-        logging.info(f"\nMetrics for {approach}:")
-        for metric, value in metrics.items():
-            if isinstance(value, (int, float)):
-                logging.info(f"{metric}: {value:.4f}")
-        
-        return metrics
-        
+        return results
     except Exception as e:
-        logging.error(f"Error in {approach} experiment: {str(e)}")
+        logging.error(f"Error running {approach}: {str(e)}")
         traceback.print_exc()
-        return {
-            'error': str(e),
-            'accuracy': 0.0,
-            'f1': 0.0,
-            'precision': 0.0,
-            'recall': 0.0,
-            'mean_annotator_f1': 0.0,
-            'std_annotator_f1': 0.0
-        }
+        return None
 
-def write_final_comparison(results):
+def write_final_comparison(results, output_path):
     """Write comparison of results with detailed metrics"""
     logging.info("Writing final comparison...")
-    results_dir = Path("results")
-    results_dir.mkdir(exist_ok=True)
     
-    with open(results_dir / "final_comparison.txt", 'w') as f:
+    with open(output_path, 'w') as f:
         f.write("=== Final Comparison of All Approaches ===\n")
         f.write(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
         
@@ -138,19 +140,30 @@ def write_final_comparison(results):
                 f.write(f"Precision: {metrics.get('precision', 'N/A'):.4f}\n")
                 f.write(f"Recall: {metrics.get('recall', 'N/A'):.4f}\n")
                 
+                # Per-class metrics
+                f.write("\nPer-Class Metrics:\n")
+                for i in range(metrics.get('num_classes', 2)):  # Default to 2 for binary classification
+                    f.write(f"Class {i}:\n")
+                    f.write(f"  F1: {metrics.get(f'class_{i}_f1', 'N/A'):.4f}\n")
+                    f.write(f"  Precision: {metrics.get(f'class_{i}_precision', 'N/A'):.4f}\n")
+                    f.write(f"  Recall: {metrics.get(f'class_{i}_recall', 'N/A'):.4f}\n")
+                
                 # Annotator metrics
                 f.write("\nAnnotator Metrics:\n")
                 f.write(f"Mean Annotator F1: {metrics.get('mean_annotator_f1', 'N/A'):.4f}\n")
                 f.write(f"Std Annotator F1: {metrics.get('std_annotator_f1', 'N/A'):.4f}\n")
                 f.write(f"Min Annotator F1: {metrics.get('min_annotator_f1', 'N/A'):.4f}\n")
                 f.write(f"Max Annotator F1: {metrics.get('max_annotator_f1', 'N/A'):.4f}\n")
+                f.write(f"Number of Annotators Evaluated: {metrics.get('num_annotators_evaluated', 'N/A')}\n")
                 
-                # Save detailed per-annotator metrics to separate file
+                # Individual annotator metrics if available
                 if 'per_annotator_metrics' in metrics:
-                    annotator_file = results_dir / f"{approach}_annotator_metrics.json"
-                    with open(annotator_file, 'w') as af:
-                        json.dump(metrics['per_annotator_metrics'], af, indent=2)
-                    f.write(f"\nDetailed per-annotator metrics saved to: {annotator_file}\n")
+                    f.write("\nIndividual Annotator Metrics:\n")
+                    for annotator_id, annotator_metrics in metrics['per_annotator_metrics'].items():
+                        f.write(f"Annotator {annotator_id}:\n")
+                        f.write(f"  F1: {annotator_metrics.get('f1', 'N/A'):.4f}\n")
+                        f.write(f"  Accuracy: {annotator_metrics.get('accuracy', 'N/A'):.4f}\n")
+                        f.write(f"  Samples: {annotator_metrics.get('num_samples', 'N/A')}\n")
             else:
                 f.write("No results available\n")
         
@@ -162,33 +175,105 @@ def set_seeds(seed=42):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
+def get_experiment_id(args):
+    """Generate a unique experiment ID based on parameters"""
+    # Create a unique ID
+    unique_id = str(uuid.uuid4())[:8]
+    
+    # Create a descriptive name
+    name_parts = []
+    
+    # Add approaches
+    approach_str = '_'.join(sorted(args.approaches))
+    name_parts.append(f"approaches-{approach_str}")
+    
+    # Add grouping info if enabled
+    if args.use_grouping:
+        name_parts.append(f"group-{args.annotators_per_group}")
+    
+    # Add noise info if enabled
+    if args.add_noise:
+        name_parts.append(f"noise-{args.noise_level}")
+    
+    # Add weighted embeddings info if enabled
+    if args.use_weighted_embeddings:
+        name_parts.append("weighted")
+    
+    # Add timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    name_parts.append(timestamp)
+    
+    # Combine with unique ID
+    experiment_name = "__".join(name_parts)
+    experiment_id = f"{experiment_name}_{unique_id}"
+    
+    return experiment_id
+
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--approaches', nargs='+', 
-                      default=['majority_vote', 'aart', 'multitask', 'annotator_embedding'],
-                      help='Which approaches to run')
+    parser = argparse.ArgumentParser(description='Run MD agreement experiments')
+    parser.add_argument('--approaches', nargs='+', required=True,
+                      choices=['majority_vote', 'aart', 'multitask', 'annotator_embedding'],
+                      help='Approaches to run')
+    parser.add_argument('--use_weighted_embeddings', action='store_true',
+                      help='Use weighted embeddings for annotator embedding model')
     parser.add_argument('--add_noise', action='store_true',
-                      help='Add annotator-specific noise to labels')
+                      help='Add noise to labels during training')
     parser.add_argument('--noise_level', type=float, default=0.2,
-                      help='Noise level to apply to all annotators (0.0 to 1.0)')
-    parser.add_argument('--use_weighted_embeddings', 
-                       action='store_true',
-                       help='Whether to use weighted embeddings for annotator representations')
+                      help='Level of noise to add to labels (default: 0.2)')
     parser.add_argument('--use_grouping', action='store_true',
                       help='Enable annotator grouping')
     parser.add_argument('--annotators_per_group', type=int, default=4,
                       help='Number of annotators per group when grouping is enabled')
+    parser.add_argument('--experiment_id', type=str, default=None,
+                      help='Optional experiment ID to use (if not provided, a new one will be generated)')
     
     # Parse the arguments before using them
     args = parser.parse_args()
     
-    logging.info("Starting experiments")
-    logging.info(f"Selected approaches: {args.approaches}")
+    # Generate unique experiment ID
+    experiment_id = args.experiment_id if args.experiment_id else get_experiment_id(args)
     
-    # Create necessary directories
-    Path("logs").mkdir(exist_ok=True)
-    Path("results").mkdir(exist_ok=True)
-    Path("models/checkpoints").mkdir(parents=True, exist_ok=True)
+    # Create experiment-specific directories
+    experiment_dir = Path("experiments") / experiment_id
+    results_dir = experiment_dir / "results"
+    logs_dir = experiment_dir / "logs"
+    
+    # Create all directories
+    for dir_path in [results_dir, logs_dir]:
+        dir_path.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize logging with experiment-specific log file
+    log_file = logs_dir / 'experiment.log'
+    
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler()
+        ]
+    )
+    
+    # Log experiment details
+    logging.info(f"Starting experiment: {experiment_id}")
+    logging.info(f"Selected approaches: {args.approaches}")
+    logging.info(f"Results will be saved in: {experiment_dir}")
+    
+    # Save experiment configuration
+    config_path = experiment_dir / "config.json"
+    with open(config_path, 'w') as f:
+        config = {
+            'experiment_id': experiment_id,
+            'approaches': args.approaches,
+            'use_weighted_embeddings': args.use_weighted_embeddings,
+            'add_noise': args.add_noise,
+            'noise_level': args.noise_level,
+            'use_grouping': args.use_grouping,
+            'annotators_per_group': args.annotators_per_group,
+            'timestamp': datetime.now().isoformat()
+        }
+        json.dump(config, f, indent=2)
     
     # Set random seeds for reproducibility
     set_seeds()
@@ -198,35 +283,112 @@ def main():
     for approach in args.approaches:
         try:
             logging.info(f"\nStarting experiment for {approach}")
-            # Pass noise parameters to run_single_experiment
+            # Pass experiment ID to run_single_experiment
             results[approach] = run_single_experiment(
                 approach, 
+                experiment_id=experiment_id,
                 add_noise=args.add_noise, 
                 noise_level=args.noise_level,
                 use_grouping=args.use_grouping,
-                annotators_per_group=args.annotators_per_group
+                annotators_per_group=args.annotators_per_group,
+                use_weighted_embeddings=args.use_weighted_embeddings
             )
         except Exception as e:
             logging.error(f"Error running {approach}: {str(e)}")
             results[approach] = {"error": str(e)}
     
     try:
-        # Write final comparison
-        write_final_comparison(results)
+        # Write final comparison to experiment-specific directory
+        comparison_path = results_dir / "final_comparison.txt"
+        write_final_comparison(results, comparison_path)
         
         # Save raw results
-        raw_results_path = Path("results/raw_results.json")
+        raw_results_path = results_dir / "raw_results.json"
         with open(raw_results_path, 'w') as f:
             # Convert any non-serializable objects to strings
             serializable_results = {k: (v if isinstance(v, dict) else {"error": str(v)}) 
                                   for k, v in results.items()}
             json.dump(serializable_results, f, indent=2)
         
+        # Create a summary file with key metrics
+        summary_path = results_dir / "summary.json"
+        summary = {
+            'experiment_id': experiment_id,
+            'approaches': args.approaches,
+            'metrics': {}
+        }
+        
+        for approach in args.approaches:
+            if approach in results and isinstance(results[approach], dict):
+                metrics = results[approach]
+                summary['metrics'][approach] = {
+                    'accuracy': metrics.get('accuracy', 'N/A'),
+                    'f1': metrics.get('f1', 'N/A'),
+                    'precision': metrics.get('precision', 'N/A'),
+                    'recall': metrics.get('recall', 'N/A'),
+                    'mean_annotator_f1': metrics.get('mean_annotator_f1', 'N/A')
+                }
+        
+        with open(summary_path, 'w') as f:
+            json.dump(summary, f, indent=2)
+        
         logging.info(f"\nExperiments completed! Results saved in:")
         logging.info(f"- {raw_results_path}")
-        logging.info(f"- results/final_comparison.txt")
+        logging.info(f"- {comparison_path}")
+        logging.info(f"- {summary_path}")
+        
+        # Print final summary
+        print_final_summary(results)
     except Exception as e:
         logging.error(f"Error writing results: {str(e)}")
+
+def print_final_summary(results):
+    """Print a summary of the results to the console"""
+    print("\n=== Final Results Summary ===")
+    print(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    
+    approaches = ['aart', 'multitask', 'annotator_embedding']
+    
+    for approach in approaches:
+        print(f"\n=== {approach.upper()} ===")
+        if approach in results and isinstance(results[approach], dict):
+            metrics = results[approach]
+            
+            # Overall metrics
+            print("\nOverall Metrics:")
+            print(f"Accuracy: {metrics.get('accuracy', 'N/A'):.4f}")
+            print(f"F1 Score: {metrics.get('f1', 'N/A'):.4f}")
+            print(f"Precision: {metrics.get('precision', 'N/A'):.4f}")
+            print(f"Recall: {metrics.get('recall', 'N/A'):.4f}")
+            
+            # Per-class metrics
+            print("\nPer-Class Metrics:")
+            for i in range(metrics.get('num_classes', 2)):  # Default to 2 for binary classification
+                print(f"Class {i}:")
+                print(f"  F1: {metrics.get(f'class_{i}_f1', 'N/A'):.4f}")
+                print(f"  Precision: {metrics.get(f'class_{i}_precision', 'N/A'):.4f}")
+                print(f"  Recall: {metrics.get(f'class_{i}_recall', 'N/A'):.4f}")
+            
+            # Annotator metrics
+            print("\nAnnotator Metrics:")
+            print(f"Mean Annotator F1: {metrics.get('mean_annotator_f1', 'N/A'):.4f}")
+            print(f"Std Annotator F1: {metrics.get('std_annotator_f1', 'N/A'):.4f}")
+            print(f"Min Annotator F1: {metrics.get('min_annotator_f1', 'N/A'):.4f}")
+            print(f"Max Annotator F1: {metrics.get('max_annotator_f1', 'N/A'):.4f}")
+            print(f"Number of Annotators Evaluated: {metrics.get('num_annotators_evaluated', 'N/A')}")
+            
+            # Individual annotator metrics if available
+            if 'per_annotator_metrics' in metrics:
+                print("\nIndividual Annotator Metrics:")
+                for annotator_id, annotator_metrics in metrics['per_annotator_metrics'].items():
+                    print(f"Annotator {annotator_id}:")
+                    print(f"  F1: {annotator_metrics.get('f1', 'N/A'):.4f}")
+                    print(f"  Accuracy: {annotator_metrics.get('accuracy', 'N/A'):.4f}")
+                    print(f"  Samples: {annotator_metrics.get('num_samples', 'N/A')}")
+        else:
+            print("No results available")
+    
+    print("\n=== End of Summary ===")
 
 if __name__ == "__main__":
     main()

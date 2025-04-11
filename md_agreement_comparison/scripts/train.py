@@ -267,8 +267,8 @@ class Trainer:
             })
         
         # Save detailed metrics to file
-        results_dir = Path("results")
-        results_dir.mkdir(exist_ok=True)
+        results_dir = Path(f"experiments/{self.config.experiment_id}/results")
+        results_dir.mkdir(parents=True, exist_ok=True)
         metrics_file = results_dir / f"{self.config.approach}_detailed_metrics.json"
         with open(metrics_file, 'w') as f:
             json.dump(metrics, f, indent=2)

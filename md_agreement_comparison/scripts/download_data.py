@@ -37,7 +37,7 @@ def download_md_agreement():
             print(f"\nStatistics for {split_name} split:")
             print(f"Number of examples: {len(df)}")
             print(f"Number of unique annotators: {len(df['annotator_id'].unique())}")
-            print(f"Label distribution: {df['label'].value_counts(normalize=True).to_dict()}")
+            print(f"Label distribution: {df['answer_label'].value_counts(normalize=True).to_dict()}")
             
             # Save to JSON
             df.to_json(output_file, orient='records', lines=True)

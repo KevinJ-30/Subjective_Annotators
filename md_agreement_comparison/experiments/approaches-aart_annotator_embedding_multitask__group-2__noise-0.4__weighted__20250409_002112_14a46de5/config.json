@@ -1,0 +1,14 @@
+{
+  "experiment_id": "approaches-aart_annotator_embedding_multitask__group-2__noise-0.4__weighted__20250409_002112_14a46de5",
+  "approaches": [
+    "aart",
+    "multitask",
+    "annotator_embedding"
+  ],
+  "use_weighted_embeddings": true,
+  "add_noise": true,
+  "noise_level": 0.4,
+  "use_grouping": true,
+  "annotators_per_group": 2,
+  "timestamp": "2025-04-09T00:21:12.277930"
+}

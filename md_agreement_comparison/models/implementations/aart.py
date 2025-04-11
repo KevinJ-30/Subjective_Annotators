@@ -8,11 +8,11 @@ class AARTModel(BaseModel):
         super().__init__(config)
         hidden_size = self.backbone.config.hidden_size
         self.annotator_embeddings = nn.Embedding(config.num_annotators, hidden_size)
-        self.lambda2 = config.lambda2
-        self.contrastive_alpha = config.contrastive_alpha
+        self.lambda2 = config.lambda2 if config.lambda2 is not None else 0.1
+        self.contrastive_alpha = config.contrastive_alpha if config.contrastive_alpha is not None else 0.1
         
-        # Initialize weights with smaller values
-        nn.init.normal_(self.annotator_embeddings.weight, mean=0.0, std=0.01)
+        # Initialize weights with better values
+        nn.init.normal_(self.annotator_embeddings.weight, mean=0.0, std=0.1)
         
         # Move to device
         self.annotator_embeddings = self.annotator_embeddings.to(self.device)
@@ -31,8 +31,20 @@ class AARTModel(BaseModel):
         
         # Compute loss with numerical stability
         similarity = similarity.clamp(-1 + 1e-7, 1 - 1e-7)  # Prevent exact ±1
-        contrastive_loss = -(labels * torch.log(1 + similarity + 1e-7) + 
-                            (1 - labels) * torch.log(1 - similarity + 1e-7)).mean()
+        
+        # Compute positive and negative pairs
+        pos_mask = labels
+        neg_mask = 1 - labels
+        
+        # Compute log probabilities
+        log_prob_pos = torch.log(1 + similarity) * pos_mask
+        log_prob_neg = torch.log(1 - similarity) * neg_mask
+        
+        # Compute loss
+        pos_loss = (log_prob_pos * pos_mask).sum() / (pos_mask.sum() + 1e-7)
+        neg_loss = (log_prob_neg * neg_mask).sum() / (neg_mask.sum() + 1e-7)
+        
+        contrastive_loss = -(pos_loss + neg_loss)
         
         return contrastive_loss
         
@@ -44,8 +56,8 @@ class AARTModel(BaseModel):
         # Get annotator embeddings
         annotator_embeds = self.annotator_embeddings(annotator_id)
         
-        # Combine text and annotator representations with scaling
-        combined = pooled_output * annotator_embeds * 0.1  # Scale down the multiplication
+        # Combine text and annotator representations with better scaling
+        combined = pooled_output + 0.5 * annotator_embeds  # Add instead of multiply
         logits = self.classifier(combined)
         
         if label is not None:
@@ -54,7 +66,7 @@ class AARTModel(BaseModel):
             cls_loss = loss_fct(logits.view(-1), label.float().view(-1))
             
             # Contrastive loss for annotator embeddings
-            contra_loss = self.compute_contrastive_loss(annotator_embeds)
+            contra_loss = self.compute_contrastive_loss(self.annotator_embeddings.weight)
             
             # Total loss with scaled components
             loss = cls_loss + self.lambda2 * contra_loss
