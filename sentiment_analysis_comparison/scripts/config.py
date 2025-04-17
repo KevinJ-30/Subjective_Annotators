@@ -8,7 +8,7 @@ class ExperimentConfig:
     approach: str  # 'multitask', 'aart', or 'annotator_embedding'
     
     # Device configuration
-    device: str = torch.device("cuda:2")  # Specifically use GPU 5
+    device: torch.device = torch.device("cuda:1")  # Use GPU 3 by default
     n_gpu: int = 1  # We'll use single GPU mode
     
     # Model parameters

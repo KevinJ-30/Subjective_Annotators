@@ -9,7 +9,7 @@ class ExperimentConfig:
     
     # Device configuration
     # device: str = torch.device("cuda:0")  # Specifically use GPU 5
-    device: str = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device: str = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     n_gpu: int = 1  # We'll use single GPU mode
     
     # Model parameters

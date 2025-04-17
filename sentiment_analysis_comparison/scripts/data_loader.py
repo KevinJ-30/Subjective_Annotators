@@ -26,8 +26,8 @@ class SentimentDataLoader(Dataset):
         
         # Apply noise if config provided and noise is enabled
         if noise_config is not None and noise_config.get('add_noise', False):
-            from scripts.noise_utils import add_noise_to_labels
-            self.data = add_noise_to_labels(self.data, noise_config)
+            from scripts.noise_utils import add_annotator_noise
+            self.data = add_annotator_noise(self.data, noise_config, num_classes=5)
             
             # Verify noise application
             self.noisy_dist = self.data['answer_label'].value_counts()
