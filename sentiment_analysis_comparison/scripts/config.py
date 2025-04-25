@@ -1,6 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 import torch
+import os
 
 @dataclass
 class ExperimentConfig:
@@ -8,15 +9,15 @@ class ExperimentConfig:
     approach: str  # 'multitask', 'aart', or 'annotator_embedding'
     
     # Device configuration
-    device: torch.device = torch.device("cuda:1")  # Use GPU 3 by default
-    n_gpu: int = 1  # We'll use single GPU mode
+    # device: torch.device = torch.device("cuda:1")  # Use GPU 3 by default
+    # n_gpu: int = 1  # We'll use single GPU mode
     
     # Model parameters
     model_name: str = "roberta-base"
     max_length: int = 128
     batch_size: int = 32
     learning_rate: float = 1e-5
-    num_epochs: int = 10
+    num_epochs: int = 1
     seed: int = 42
     num_annotators: int = None  # Will be set during data setup
     
@@ -34,6 +35,7 @@ class ExperimentConfig:
     
     # Noise configuration
     add_noise: bool = False
+    noise_level: float = 0.2
     noise_strategy: str = 'custom'  # 'fixed', 'random', or 'custom'
     noise_levels: Optional[dict] = None
     default_noise: float = 0.2  # default noise level for non-specified annotators
@@ -46,19 +48,30 @@ class ExperimentConfig:
     use_grouping: bool = False
     annotators_per_group: int = 4
     group_min_agreement: float = 0.6
+
+    # Accept deepspeed settings.
+    deepspeed_config: Optional[str] = None
+
+    # these get set in __post_init__:
+    device: torch.device = field(init=False)
+    n_gpu: int = field(init=False)
     
     # Multiclass specific
     num_classes: int = 5  # Number of sentiment classes
     
     def __post_init__(self):
-        print(f"Using device: {self.device}")
-        if self.n_gpu > 0:
-            print(f"Number of GPUs available: {self.n_gpu}")
+        rank = int(os.environ.get("LOCAL_RANK", 0))
+        self.device = torch.device(f"cuda:{rank}")
+        self.n_gpu = torch.cuda.device_count()
+        print(f"Using device: {self.device}, GPUs available: {self.n_gpu}")
+    #     print(f"Using device: {self.device}")
+    #     if self.n_gpu > 0:
+    #         print(f"Number of GPUs available: {self.n_gpu}")
             
-    def __init__(self, approach, add_noise, noise_level, use_grouping, annotators_per_group):
-        self.approach = approach
-        self.add_noise = add_noise
-        self.noise_level = noise_level
-        self.use_grouping = use_grouping
-        self.annotators_per_group = annotators_per_group
-        # ... existing code ... 
+    # def __init__(self, approach, add_noise, noise_level, use_grouping, annotators_per_group):
+    #     self.approach = approach
+    #     self.add_noise = add_noise
+    #     self.noise_level = noise_level
+    #     self.use_grouping = use_grouping
+    #     self.annotators_per_group = annotators_per_group
+    #     # ... existing code ... 

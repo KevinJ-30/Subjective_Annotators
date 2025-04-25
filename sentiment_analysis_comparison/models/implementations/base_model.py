@@ -19,14 +19,17 @@ class BaseModel(nn.Module):
         # Move model to device
         self.to(self.device)
         
-        # Handle multi-GPU if needed
-        if config.n_gpu > 1:
-            self.backbone = nn.DataParallel(self.backbone)
-            self.classifier = nn.DataParallel(self.classifier)
+        # # Handle multi-GPU if needed
+        # if config.n_gpu > 1:
+        #     self.backbone = nn.DataParallel(self.backbone)
+        #     self.classifier = nn.DataParallel(self.classifier)
         
     def forward(self, input_ids, attention_mask, **kwargs):
-        outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
-        pooled_output = outputs[1] if isinstance(self.backbone, nn.DataParallel) else outputs.pooler_output
+        # outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
+        # pooled_output = outputs[1] if isinstance(self.backbone, nn.DataParallel) else outputs.pooler_output
+        outputs = self.backbone(input_ids=input_ids.to(self.device),
+                                attention_mask=attention_mask.to(self.device))
+        pooled_output = outputs.pooler_output
         pooled_output = self.dropout(pooled_output)
         logits = self.classifier(pooled_output)
         return logits 

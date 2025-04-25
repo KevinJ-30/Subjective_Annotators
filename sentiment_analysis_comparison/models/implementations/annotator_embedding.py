@@ -8,7 +8,7 @@ class AnnotatorEmbeddingModel(BaseModel):
         super().__init__(config)
         
         # Annotator embeddings
-        self.annotator_embeddings = nn.Embedding(config.num_annotators, self.hidden_size)
+        self.annotator_embeddings = nn.Embedding(config.num_annotators, self.hidden_size).to(self.device)
         
         # Initialize weights with smaller std for better stability
         nn.init.normal_(self.annotator_embeddings.weight, mean=0.0, std=0.02)
@@ -19,7 +19,7 @@ class AnnotatorEmbeddingModel(BaseModel):
         
         # Additional layers for combining text and annotator representations
         if config.use_weighted_embeddings:
-            self.attention = nn.Linear(self.hidden_size * 2, 1)
+            self.attention = nn.Linear(self.hidden_size * 2, 1).to(self.device)
         
         # Loss function
         self.criterion = nn.CrossEntropyLoss()
@@ -27,7 +27,8 @@ class AnnotatorEmbeddingModel(BaseModel):
     def forward(self, input_ids, attention_mask, annotator_id, label=None, sample_index=None):
         # Get text representation
         outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
-        pooled_output = outputs[1] if isinstance(self.backbone, nn.DataParallel) else outputs.pooler_output
+        # pooled_output = outputs[1] if isinstance(self.backbone, nn.DataParallel) else outputs.pooler_output
+        pooled_output = outputs.pooler_output
         pooled_output = self.dropout(pooled_output)
         
         # Get annotator embeddings
