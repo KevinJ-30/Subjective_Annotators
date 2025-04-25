@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 import torch
 import json
 from pathlib import Path
@@ -40,10 +41,12 @@ from torch.utils.data import DataLoader
 # Import models
 from models.implementations.multitask import MultitaskModel
 from models.implementations.aart import AARTModel
+from models.implementations.aart_RINCE import AART_RINCEModel
 from models.implementations.annotator_embedding import AnnotatorEmbeddingModel
 from models.implementations.majority_vote import MajorityVoteModel
 
-def setup_config(approach, add_noise=False, noise_level=0.2, use_grouping=False, annotators_per_group=4):
+def setup_config(approach, add_noise=False, noise_level=0.2, use_grouping=False, annotators_per_group=4, 
+                 deepspeed_config: Optional[str] = None):
     """Setup configuration for a specific approach"""
     logging.info(f"Setting up configuration for {approach}")
     
@@ -53,13 +56,17 @@ def setup_config(approach, add_noise=False, noise_level=0.2, use_grouping=False,
         add_noise=add_noise,
         noise_level=noise_level,
         use_grouping=use_grouping,
-        annotators_per_group=annotators_per_group
+        annotators_per_group=annotators_per_group,
+        deepspeed_config=deepspeed_config
     )
     
     # Set approach-specific parameters
     if approach == 'majority_vote':
         config.use_majority_vote = True
     elif approach == 'aart':
+        config.lambda2 = 0.1
+        config.contrastive_alpha = 0.1
+    elif approach == 'aart_rince':
         config.lambda2 = 0.1
         config.contrastive_alpha = 0.1
     elif approach == 'multitask':
@@ -70,7 +77,8 @@ def setup_config(approach, add_noise=False, noise_level=0.2, use_grouping=False,
     
     return config
 
-def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=0.2, use_grouping=False, annotators_per_group=4, use_weighted_embeddings=False):
+def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=0.2, use_grouping=False, annotators_per_group=4, use_weighted_embeddings=False, 
+                          deepspeed_config: Optional[str] = None):
     """Run a single experiment with the specified approach"""
     try:
         logging.info(f"\nStarting experiment for {approach}")
@@ -81,7 +89,8 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
             add_noise=add_noise, 
             noise_level=noise_level, 
             use_grouping=use_grouping, 
-            annotators_per_group=annotators_per_group
+            annotators_per_group=annotators_per_group,
+            deepspeed_config=deepspeed_config
         )
         
         # Set weighted embeddings if requested
@@ -102,6 +111,8 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
             trainer = Trainer(config, MajorityVoteModel)
         elif approach == 'aart':
             trainer = Trainer(config, AARTModel)
+        elif approach == 'aart_rince':
+            trainer = Trainer(config, AART_RINCEModel)
         elif approach == 'multitask':
             trainer = Trainer(config, MultitaskModel)
         elif approach == 'annotator_embedding':
@@ -119,55 +130,116 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
         return None
 
 def write_final_comparison(results, output_path):
-    """Write comparison of results with detailed metrics"""
-    logging.info("Writing final comparison...")
-    
+    """Write comparison of results with detailed metrics."""
+    def fmt(val):
+        return f"{val:.4f}" if isinstance(val, (float, int)) else str(val)
+
+    logging.info("Writing final comparison…")
     with open(output_path, 'w') as f:
         f.write("=== Final Comparison of All Approaches ===\n")
-        f.write(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-        
-        approaches = ['aart', 'multitask', 'annotator_embedding']
-        
-        for approach in approaches:
+        f.write(f"Generated on: {datetime.now():%Y-%m-%d %H:%M:%S}\n\n")
+
+        for approach in ['aart', 'aart_rince', 'multitask', 'annotator_embedding', 'majority_vote']:
+            res = results.get(approach)
             f.write(f"\n=== {approach.upper()} ===\n")
-            if approach in results and isinstance(results[approach], dict):
-                metrics = results[approach]
-                
-                # Overall metrics
-                f.write("\nOverall Metrics:\n")
-                f.write(f"Accuracy: {metrics.get('accuracy', 'N/A'):.4f}\n")
-                f.write(f"F1 Score: {metrics.get('f1', 'N/A'):.4f}\n")
-                f.write(f"Precision: {metrics.get('precision', 'N/A'):.4f}\n")
-                f.write(f"Recall: {metrics.get('recall', 'N/A'):.4f}\n")
-                
-                # Per-class metrics
-                f.write("\nPer-Class Metrics:\n")
-                for i in range(metrics.get('num_classes', 2)):  # Default to 2 for binary classification
-                    f.write(f"Class {i}:\n")
-                    f.write(f"  F1: {metrics.get(f'class_{i}_f1', 'N/A'):.4f}\n")
-                    f.write(f"  Precision: {metrics.get(f'class_{i}_precision', 'N/A'):.4f}\n")
-                    f.write(f"  Recall: {metrics.get(f'class_{i}_recall', 'N/A'):.4f}\n")
-                
-                # Annotator metrics
-                f.write("\nAnnotator Metrics:\n")
-                f.write(f"Mean Annotator F1: {metrics.get('mean_annotator_f1', 'N/A'):.4f}\n")
-                f.write(f"Std Annotator F1: {metrics.get('std_annotator_f1', 'N/A'):.4f}\n")
-                f.write(f"Min Annotator F1: {metrics.get('min_annotator_f1', 'N/A'):.4f}\n")
-                f.write(f"Max Annotator F1: {metrics.get('max_annotator_f1', 'N/A'):.4f}\n")
-                f.write(f"Number of Annotators Evaluated: {metrics.get('num_annotators_evaluated', 'N/A')}\n")
-                
-                # Individual annotator metrics if available
-                if 'per_annotator_metrics' in metrics:
-                    f.write("\nIndividual Annotator Metrics:\n")
-                    for annotator_id, annotator_metrics in metrics['per_annotator_metrics'].items():
-                        f.write(f"Annotator {annotator_id}:\n")
-                        f.write(f"  F1: {annotator_metrics.get('f1', 'N/A'):.4f}\n")
-                        f.write(f"  Accuracy: {annotator_metrics.get('accuracy', 'N/A'):.4f}\n")
-                        f.write(f"  Samples: {annotator_metrics.get('num_samples', 'N/A')}\n")
-            else:
+            if not isinstance(res, dict):
                 f.write("No results available\n")
-        
+                continue
+
+            # Overall
+            f.write("\nOverall Metrics:\n")
+            f.write(f"  Accuracy:  {fmt(res.get('accuracy','N/A'))}\n")
+            f.write(f"  F1 Score:  {fmt(res.get('f1','N/A'))}\n")
+            f.write(f"  Precision: {fmt(res.get('precision','N/A'))}\n")
+            f.write(f"  Recall:    {fmt(res.get('recall','N/A'))}\n")
+
+            # Per-class
+            nc = res.get('num_classes', 2)
+            try: nc = int(nc)
+            except: nc = 2
+            f.write("\nPer-Class Metrics:\n")
+            for i in range(nc):
+                f.write(f"  Class {i}:\n")
+                f.write(f"    F1:        {fmt(res.get(f'class_{i}_f1','N/A'))}\n")
+                f.write(f"    Precision:{fmt(res.get(f'class_{i}_precision','N/A'))}\n")
+                f.write(f"    Recall:   {fmt(res.get(f'class_{i}_recall','N/A'))}\n")
+
+            # Annotator-level
+            f.write("\nAnnotator Metrics:\n")
+            f.write(f"  Mean Annotator F1: {fmt(res.get('mean_annotator_f1','N/A'))}\n")
+            f.write(f"  Std Annotator F1:  {fmt(res.get('std_annotator_f1','N/A'))}\n")
+            f.write(f"  Min Annotator F1:  {fmt(res.get('min_annotator_f1','N/A'))}\n")
+            f.write(f"  Max Annotator F1:  {fmt(res.get('max_annotator_f1','N/A'))}\n")
+            f.write(f"  Num Annotators:    {fmt(res.get('num_annotators_evaluated','N/A'))}\n")
+
+            # Individual annotators
+            per = res.get('per_annotator_metrics', {})
+            if isinstance(per, dict):
+                f.write("\nIndividual Annotator Metrics:\n")
+                for aid, m in per.items():
+                    f.write(
+                        f"  Annotator {aid}: "
+                        f"F1={fmt(m.get('f1','N/A'))}, "
+                        f"Acc={fmt(m.get('accuracy','N/A'))}, "
+                        f"Samples={fmt(m.get('num_samples','N/A'))}\n"
+                    )
+
         f.write("\n=== End of Report ===\n")
+
+
+def print_final_summary(results):
+    """Print a summary of the results to the console, safely formatting missing values."""
+    def fmt(val):
+        return f"{val:.4f}" if isinstance(val, (float, int)) else str(val)
+
+    print("\n=== Final Results Summary ===")
+    print(f"Generated on: {datetime.now():%Y-%m-%d %H:%M:%S}\n")
+
+    for approach in ['aart', 'aart_rince', 'multitask', 'annotator_embedding', 'majority_vote']:
+        res = results.get(approach)
+        print(f"\n=== {approach.upper()} ===")
+        if not isinstance(res, dict):
+            print("No results available")
+            continue
+
+        # Overall
+        print("\nOverall Metrics:")
+        print(f"  Accuracy:  {fmt(res.get('accuracy','N/A'))}")
+        print(f"  F1 Score:  {fmt(res.get('f1','N/A'))}")
+        print(f"  Precision: {fmt(res.get('precision','N/A'))}")
+        print(f"  Recall:    {fmt(res.get('recall','N/A'))}")
+
+        # Per-class
+        nc = res.get('num_classes', 2)
+        try: nc = int(nc)
+        except: nc = 2
+        print("\nPer-Class Metrics:")
+        for i in range(nc):
+            print(f"  Class {i}:")
+            print(f"    F1:        {fmt(res.get(f'class_{i}_f1','N/A'))}")
+            print(f"    Precision:{fmt(res.get(f'class_{i}_precision','N/A'))}")
+            print(f"    Recall:   {fmt(res.get(f'class_{i}_recall','N/A'))}")
+
+        # Annotator
+        print("\nAnnotator Metrics:")
+        print(f"  Mean Annotator F1: {fmt(res.get('mean_annotator_f1','N/A'))}")
+        print(f"  Std Annotator F1:  {fmt(res.get('std_annotator_f1','N/A'))}")
+        print(f"  Min Annotator F1:  {fmt(res.get('min_annotator_f1','N/A'))}")
+        print(f"  Max Annotator F1:  {fmt(res.get('max_annotator_f1','N/A'))}")
+        print(f"  Num Annotators:    {fmt(res.get('num_annotators_evaluated','N/A'))}")
+
+        # Individual breakdown
+        per = res.get('per_annotator_metrics', {})
+        if isinstance(per, dict):
+            print("\nIndividual Annotator Metrics:")
+            for aid, m in per.items():
+                print(
+                    f"  Annotator {aid}: "
+                    f"F1={fmt(m.get('f1','N/A'))}, "
+                    f"Acc={fmt(m.get('accuracy','N/A'))}, "
+                    f"Samples={fmt(m.get('num_samples','N/A'))}"
+                )
+    print("\n=== End of Summary ===\n")
 
 def set_seeds(seed=42):
     torch.manual_seed(seed)
@@ -212,7 +284,7 @@ def get_experiment_id(args):
 def main():
     parser = argparse.ArgumentParser(description='Run MD agreement experiments')
     parser.add_argument('--approaches', nargs='+', required=True,
-                      choices=['majority_vote', 'aart', 'multitask', 'annotator_embedding'],
+                      choices=['majority_vote', 'aart', 'aart_rince', 'multitask', 'annotator_embedding'],
                       help='Approaches to run')
     parser.add_argument('--use_weighted_embeddings', action='store_true',
                       help='Use weighted embeddings for annotator embedding model')
@@ -227,8 +299,17 @@ def main():
     parser.add_argument('--experiment_id', type=str, default=None,
                       help='Optional experiment ID to use (if not provided, a new one will be generated)')
     
+    #Add deepspeed config
+    parser.add_argument('--deepspeed_config', type=str, default=None,
+                    help='Path to DeepSpeed JSON config')
+    parser.add_argument('--local_rank', type=int, default=0,
+                    help='DeepSpeed local rank (do not set)')
+    
     # Parse the arguments before using them
     args = parser.parse_args()
+
+    # Tell the rest of the code which GPU this process should use
+    os.environ['LOCAL_RANK'] = str(args.local_rank)
     
     # Generate unique experiment ID
     experiment_id = args.experiment_id if args.experiment_id else get_experiment_id(args)
@@ -291,7 +372,8 @@ def main():
                 noise_level=args.noise_level,
                 use_grouping=args.use_grouping,
                 annotators_per_group=args.annotators_per_group,
-                use_weighted_embeddings=args.use_weighted_embeddings
+                use_weighted_embeddings=args.use_weighted_embeddings,
+                deepspeed_config=args.deepspeed_config
             )
         except Exception as e:
             logging.error(f"Error running {approach}: {str(e)}")
@@ -341,54 +423,6 @@ def main():
         print_final_summary(results)
     except Exception as e:
         logging.error(f"Error writing results: {str(e)}")
-
-def print_final_summary(results):
-    """Print a summary of the results to the console"""
-    print("\n=== Final Results Summary ===")
-    print(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-    
-    approaches = ['aart', 'multitask', 'annotator_embedding']
-    
-    for approach in approaches:
-        print(f"\n=== {approach.upper()} ===")
-        if approach in results and isinstance(results[approach], dict):
-            metrics = results[approach]
-            
-            # Overall metrics
-            print("\nOverall Metrics:")
-            print(f"Accuracy: {metrics.get('accuracy', 'N/A'):.4f}")
-            print(f"F1 Score: {metrics.get('f1', 'N/A'):.4f}")
-            print(f"Precision: {metrics.get('precision', 'N/A'):.4f}")
-            print(f"Recall: {metrics.get('recall', 'N/A'):.4f}")
-            
-            # Per-class metrics
-            print("\nPer-Class Metrics:")
-            for i in range(metrics.get('num_classes', 2)):  # Default to 2 for binary classification
-                print(f"Class {i}:")
-                print(f"  F1: {metrics.get(f'class_{i}_f1', 'N/A'):.4f}")
-                print(f"  Precision: {metrics.get(f'class_{i}_precision', 'N/A'):.4f}")
-                print(f"  Recall: {metrics.get(f'class_{i}_recall', 'N/A'):.4f}")
-            
-            # Annotator metrics
-            print("\nAnnotator Metrics:")
-            print(f"Mean Annotator F1: {metrics.get('mean_annotator_f1', 'N/A'):.4f}")
-            print(f"Std Annotator F1: {metrics.get('std_annotator_f1', 'N/A'):.4f}")
-            print(f"Min Annotator F1: {metrics.get('min_annotator_f1', 'N/A'):.4f}")
-            print(f"Max Annotator F1: {metrics.get('max_annotator_f1', 'N/A'):.4f}")
-            print(f"Number of Annotators Evaluated: {metrics.get('num_annotators_evaluated', 'N/A')}")
-            
-            # Individual annotator metrics if available
-            if 'per_annotator_metrics' in metrics:
-                print("\nIndividual Annotator Metrics:")
-                for annotator_id, annotator_metrics in metrics['per_annotator_metrics'].items():
-                    print(f"Annotator {annotator_id}:")
-                    print(f"  F1: {annotator_metrics.get('f1', 'N/A'):.4f}")
-                    print(f"  Accuracy: {annotator_metrics.get('accuracy', 'N/A'):.4f}")
-                    print(f"  Samples: {annotator_metrics.get('num_samples', 'N/A')}")
-        else:
-            print("No results available")
-    
-    print("\n=== End of Summary ===")
 
 if __name__ == "__main__":
     main()
