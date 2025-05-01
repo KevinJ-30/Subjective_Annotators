@@ -1,5 +1,4 @@
 import os
-from typing import Optional
 import torch
 import json
 from pathlib import Path
@@ -41,12 +40,10 @@ from torch.utils.data import DataLoader
 # Import models
 from models.implementations.multitask import MultitaskModel
 from models.implementations.aart import AARTModel
-from models.implementations.aart_RINCE import AART_RINCEModel
 from models.implementations.annotator_embedding import AnnotatorEmbeddingModel
 from models.implementations.majority_vote import MajorityVoteModel
 
-def setup_config(approach, add_noise=False, noise_level=0.2, use_grouping=False, annotators_per_group=4, 
-                 deepspeed_config: Optional[str] = None):
+def setup_config(approach, add_noise=False, noise_level=0.2, use_grouping=False, annotators_per_group=4):
     """Setup configuration for a specific approach"""
     logging.info(f"Setting up configuration for {approach}")
     
@@ -56,17 +53,13 @@ def setup_config(approach, add_noise=False, noise_level=0.2, use_grouping=False,
         add_noise=add_noise,
         noise_level=noise_level,
         use_grouping=use_grouping,
-        annotators_per_group=annotators_per_group,
-        deepspeed_config=deepspeed_config
+        annotators_per_group=annotators_per_group
     )
     
     # Set approach-specific parameters
     if approach == 'majority_vote':
         config.use_majority_vote = True
     elif approach == 'aart':
-        config.lambda2 = 0.1
-        config.contrastive_alpha = 0.1
-    elif approach == 'aart_rince':
         config.lambda2 = 0.1
         config.contrastive_alpha = 0.1
     elif approach == 'multitask':
@@ -109,8 +102,7 @@ def get_experiment_id(args):
     # Join all parts with double underscore
     return "__".join(name_parts)
 
-def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=0.2, use_grouping=False, annotators_per_group=4, use_weighted_embeddings=False, 
-                          deepspeed_config: Optional[str] = None):
+def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=0.2, use_grouping=False, annotators_per_group=4, use_weighted_embeddings=False):
     """Run a single experiment with the specified approach"""
     try:
         logging.info(f"\nStarting experiment for {approach}")
@@ -121,8 +113,7 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
             add_noise=add_noise, 
             noise_level=noise_level, 
             use_grouping=use_grouping, 
-            annotators_per_group=annotators_per_group,
-            deepspeed_config=deepspeed_config
+            annotators_per_group=annotators_per_group
         )
         
         # Log the device being used
@@ -154,8 +145,6 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
             trainer = Trainer(config, MajorityVoteModel)
         elif approach == 'aart':
             trainer = Trainer(config, AARTModel)
-        elif approach == 'aart_rince':
-            trainer = Trainer(config, AART_RINCEModel)
         elif approach == 'multitask':
             trainer = Trainer(config, MultitaskModel)
         elif approach == 'annotator_embedding':
@@ -258,7 +247,7 @@ def print_final_summary(all_results):
 def main():
     parser = argparse.ArgumentParser(description='Run sentiment analysis experiments')
     parser.add_argument('--approaches', nargs='+', required=True,
-                      choices=['aart', 'aart_rince', 'multitask', 'annotator_embedding', 'majority_vote'],
+                      choices=['aart', 'multitask', 'annotator_embedding'],
                       help='Approaches to run')
     parser.add_argument('--use_weighted_embeddings', action='store_true',
                       help='Use weighted embeddings for annotator embedding model')
@@ -272,17 +261,9 @@ def main():
                       help='Number of annotators per group when grouping is enabled')
     parser.add_argument('--experiment_id', type=str, default=None,
                       help='Optional experiment ID to use (if not provided, a new one will be generated)')
-    #Add deepspeed config
-    parser.add_argument('--deepspeed_config', type=str, default=None,
-                    help='Path to DeepSpeed JSON config')
-    parser.add_argument('--local_rank', type=int, default=0,
-                    help='DeepSpeed local rank (do not set)')
     
     # Parse the arguments before using them
     args = parser.parse_args()
-
-    # Tell the rest of the code which GPU this process should use
-    os.environ['LOCAL_RANK'] = str(args.local_rank)
     
     # Set random seeds
     set_seeds(42)
@@ -345,8 +326,7 @@ def main():
                 noise_level=args.noise_level,
                 use_grouping=args.use_grouping,
                 annotators_per_group=args.annotators_per_group,
-                use_weighted_embeddings=args.use_weighted_embeddings,
-                deepspeed_config=args.deepspeed_config
+                use_weighted_embeddings=args.use_weighted_embeddings
             )
         except Exception as e:
             logging.error(f"Error running {approach}: {str(e)}")

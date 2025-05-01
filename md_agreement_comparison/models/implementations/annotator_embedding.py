@@ -5,10 +5,7 @@ from .base_model import BaseModel
 class AnnotatorEmbeddingModel(BaseModel):
     def __init__(self, config):
         super().__init__(config)
-        # If backbone was wrapped in DataParallel, unwrap to access its config
-        backbone = self.backbone.module if hasattr(self.backbone, 'module') else self.backbone
-        hidden_size = backbone.config.hidden_size
-        # hidden_size = self.backbone.config.hidden_size
+        hidden_size = self.backbone.config.hidden_size
         self.annotator_embeddings = nn.Embedding(config.num_annotators, hidden_size)
         self.use_annotator_embed = config.use_annotator_embed
         self.use_annotation_embed = config.use_annotation_embed
@@ -19,8 +16,8 @@ class AnnotatorEmbeddingModel(BaseModel):
         
         # Move to device and handle multi-GPU
         self.annotator_embeddings = self.annotator_embeddings.to(self.device)
-        # if config.n_gpu > 1:
-        #     self.annotator_embeddings = nn.DataParallel(self.annotator_embeddings)
+        if config.n_gpu > 1:
+            self.annotator_embeddings = nn.DataParallel(self.annotator_embeddings)
         
     def forward(self, input_ids, attention_mask, annotator_id, label=None):
         outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)

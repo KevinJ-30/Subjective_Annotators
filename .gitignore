@@ -1,12 +1,3 @@
-# Othe directories with result or checkpoint
-**/experiments/
-**/md_agreement_comparison/experiments
-**/md_agreement_comparison/scripts_old
-**/sentiment_analysis_comparison/experiments
-**/sentiment_analysis_comparison/models_old
-**/sentiment_analysis_comparison/scripts_old
-
-
 # Data directories (anywhere in the project)
 **/data/md_agreement/
 **/data/sentiment_analysis/
