@@ -11,7 +11,6 @@ import pandas as pd
 from annotator_grouping import AnnotatorGrouper
 from data_loader import MDAgreementDataset
 from metrics import evaluate_model
-import deepspeed
 
 class Trainer:
     def __init__(self, config, model_class):
@@ -120,21 +119,13 @@ class Trainer:
             shuffle=False  # Don't shuffle test data
         )
         
-        model_engine, optimizer, _, scheduler = deepspeed.initialize(args=None,
-                                                                    model=self.model,
-                                                                    model_parameters=self.model.parameters(),
-                                                                    config_params=self.config.deepspeed_config)
-        self.model = model_engine
-        self.optimizer = optimizer
-        self.scheduler = scheduler
-
-        # optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.config.learning_rate, weight_decay=0.01)
-        # total_steps = len(self.train_loader) * self.config.num_epochs
-        # scheduler = get_linear_schedule_with_warmup(
-        #     optimizer, 
-        #     num_warmup_steps=0,
-        #     num_training_steps=total_steps
-        # )
+        optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.config.learning_rate, weight_decay=0.01)
+        total_steps = len(self.train_loader) * self.config.num_epochs
+        scheduler = get_linear_schedule_with_warmup(
+            optimizer, 
+            num_warmup_steps=0,
+            num_training_steps=total_steps
+        )
         
         best_loss = float('inf')
         print(f"\nStarting training for {self.config.num_epochs} epochs...")
@@ -148,9 +139,7 @@ class Trainer:
                               leave=True)
             
             for batch in progress_bar:
-                # optimizer.zero_grad()
-                self.model.zero_grad()
-
+                optimizer.zero_grad()
                 loss = self.model(**batch)
                 
                 # Skip bad batches
@@ -158,15 +147,13 @@ class Trainer:
                     print("NaN loss detected, skipping batch")
                     continue
                     
-                # loss.backward()
-                self.model.backward(loss)
+                loss.backward()
                 
                 # Clip gradients
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                 
-                # optimizer.step()
-                # scheduler.step()
-                self.model.step()
+                optimizer.step()
+                scheduler.step()
                 
                 total_loss += loss.item()
                 avg_loss = total_loss / (progress_bar.n + 1)

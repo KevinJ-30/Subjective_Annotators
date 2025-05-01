@@ -5,28 +5,18 @@ from .base_model import BaseModel
 class MultitaskModel(BaseModel):
     def __init__(self, config):
         super().__init__(config)
-        # Unwrap backbone if wrapped
-        backbone = self.backbone.module if hasattr(self.backbone, 'module') else self.backbone
-        hidden_size = backbone.config.hidden_size
-
         self.num_annotators = config.num_annotators
         
         # Create separate classifier heads for each annotator
         self.annotator_heads = nn.ModuleList([
-            nn.Linear(hidden_size, 1)
+            nn.Linear(self.backbone.config.hidden_size, 1) 
             for _ in range(self.num_annotators)
         ])
-
-        # self.annotator_heads = nn.ModuleList([
-        #     nn.Linear(self.backbone.config.hidden_size, 1) 
-        #     for _ in range(self.num_annotators)
-        # ])
         
-
         # Move to device and handle multi-GPU
         self.annotator_heads = self.annotator_heads.to(self.device)
-        # if config.n_gpu > 1:
-            # self.annotator_heads = nn.DataParallel(self.annotator_heads)
+        if config.n_gpu > 1:
+            self.annotator_heads = nn.DataParallel(self.annotator_heads)
         
     def forward(self, input_ids, attention_mask, annotator_id, label=None):
         outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
