@@ -1,0 +1,12 @@
+{
+  "experiment_id": "approaches-aart_rince__20250501_114104_e264e381",
+  "approaches": [
+    "aart_rince"
+  ],
+  "use_weighted_embeddings": false,
+  "add_noise": false,
+  "noise_level": 0.2,
+  "use_grouping": false,
+  "annotators_per_group": 4,
+  "timestamp": "2025-05-01T11:41:04.669838"
+}

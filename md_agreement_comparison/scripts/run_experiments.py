@@ -40,6 +40,7 @@ from torch.utils.data import DataLoader
 # Import models
 from models.implementations.multitask import MultitaskModel
 from models.implementations.aart import AARTModel
+from models.implementations.aart_Rince_new import NewRinceModel
 from models.implementations.annotator_embedding import AnnotatorEmbeddingModel
 from models.implementations.majority_vote import MajorityVoteModel
 
@@ -62,6 +63,12 @@ def setup_config(approach, add_noise=False, noise_level=0.2, use_grouping=False,
     elif approach == 'aart':
         config.lambda2 = 0.1
         config.contrastive_alpha = 0.1
+    elif approach == 'aart_rince':
+        config.lambda2 = 0.1
+        config.contrastive_alpha = 0.1
+        config.temperature = 0.07
+        config.rince_lambda = 1.0
+        config.rince_q = 0.5
     elif approach == 'multitask':
         pass
     elif approach == 'annotator_embedding':
@@ -73,7 +80,8 @@ def setup_config(approach, add_noise=False, noise_level=0.2, use_grouping=False,
 def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=0.2, use_grouping=False, annotators_per_group=4, use_weighted_embeddings=False):
     """Run a single experiment with the specified approach"""
     try:
-        logging.info(f"\nStarting experiment for {approach}")
+        if approach != 'aart_rince':  # Only log for non-aart_rince approaches
+            logging.info(f"\nStarting experiment for {approach}")
         
         # Create config
         config = setup_config(
@@ -102,6 +110,8 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
             trainer = Trainer(config, MajorityVoteModel)
         elif approach == 'aart':
             trainer = Trainer(config, AARTModel)
+        elif approach == 'aart_rince':
+            trainer = Trainer(config, NewRinceModel)
         elif approach == 'multitask':
             trainer = Trainer(config, MultitaskModel)
         elif approach == 'annotator_embedding':
@@ -111,6 +121,9 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
         
         # Train and evaluate
         results = trainer.train()
+        
+        if approach != 'aart_rince':  # Only log for non-aart_rince approaches
+            logging.info(f"Training completed for {approach}")
         
         return results
     except Exception as e:
@@ -126,7 +139,7 @@ def write_final_comparison(results, output_path):
         f.write("=== Final Comparison of All Approaches ===\n")
         f.write(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
         
-        approaches = ['aart', 'multitask', 'annotator_embedding']
+        approaches = ['aart', 'aart_rince', 'multitask', 'annotator_embedding']
         
         for approach in approaches:
             f.write(f"\n=== {approach.upper()} ===\n")
@@ -135,25 +148,25 @@ def write_final_comparison(results, output_path):
                 
                 # Overall metrics
                 f.write("\nOverall Metrics:\n")
-                f.write(f"Accuracy: {metrics.get('accuracy', 'N/A'):.4f}\n")
-                f.write(f"F1 Score: {metrics.get('f1', 'N/A'):.4f}\n")
-                f.write(f"Precision: {metrics.get('precision', 'N/A'):.4f}\n")
-                f.write(f"Recall: {metrics.get('recall', 'N/A'):.4f}\n")
+                f.write(f"Accuracy: {metrics.get('accuracy', 'N/A')}\n")
+                f.write(f"F1 Score: {metrics.get('f1', 'N/A')}\n")
+                f.write(f"Precision: {metrics.get('precision', 'N/A')}\n")
+                f.write(f"Recall: {metrics.get('recall', 'N/A')}\n")
                 
                 # Per-class metrics
                 f.write("\nPer-Class Metrics:\n")
-                for i in range(metrics.get('num_classes', 2)):  # Default to 2 for binary classification
+                for i in range(metrics.get('num_classes', 2)):
                     f.write(f"Class {i}:\n")
-                    f.write(f"  F1: {metrics.get(f'class_{i}_f1', 'N/A'):.4f}\n")
-                    f.write(f"  Precision: {metrics.get(f'class_{i}_precision', 'N/A'):.4f}\n")
-                    f.write(f"  Recall: {metrics.get(f'class_{i}_recall', 'N/A'):.4f}\n")
+                    f.write(f"  F1: {metrics.get(f'class_{i}_f1', 'N/A')}\n")
+                    f.write(f"  Precision: {metrics.get(f'class_{i}_precision', 'N/A')}\n")
+                    f.write(f"  Recall: {metrics.get(f'class_{i}_recall', 'N/A')}\n")
                 
                 # Annotator metrics
                 f.write("\nAnnotator Metrics:\n")
-                f.write(f"Mean Annotator F1: {metrics.get('mean_annotator_f1', 'N/A'):.4f}\n")
-                f.write(f"Std Annotator F1: {metrics.get('std_annotator_f1', 'N/A'):.4f}\n")
-                f.write(f"Min Annotator F1: {metrics.get('min_annotator_f1', 'N/A'):.4f}\n")
-                f.write(f"Max Annotator F1: {metrics.get('max_annotator_f1', 'N/A'):.4f}\n")
+                f.write(f"Mean Annotator F1: {metrics.get('mean_annotator_f1', 'N/A')}\n")
+                f.write(f"Std Annotator F1: {metrics.get('std_annotator_f1', 'N/A')}\n")
+                f.write(f"Min Annotator F1: {metrics.get('min_annotator_f1', 'N/A')}\n")
+                f.write(f"Max Annotator F1: {metrics.get('max_annotator_f1', 'N/A')}\n")
                 f.write(f"Number of Annotators Evaluated: {metrics.get('num_annotators_evaluated', 'N/A')}\n")
                 
                 # Individual annotator metrics if available
@@ -161,8 +174,8 @@ def write_final_comparison(results, output_path):
                     f.write("\nIndividual Annotator Metrics:\n")
                     for annotator_id, annotator_metrics in metrics['per_annotator_metrics'].items():
                         f.write(f"Annotator {annotator_id}:\n")
-                        f.write(f"  F1: {annotator_metrics.get('f1', 'N/A'):.4f}\n")
-                        f.write(f"  Accuracy: {annotator_metrics.get('accuracy', 'N/A'):.4f}\n")
+                        f.write(f"  F1: {annotator_metrics.get('f1', 'N/A')}\n")
+                        f.write(f"  Accuracy: {annotator_metrics.get('accuracy', 'N/A')}\n")
                         f.write(f"  Samples: {annotator_metrics.get('num_samples', 'N/A')}\n")
             else:
                 f.write("No results available\n")
@@ -212,7 +225,7 @@ def get_experiment_id(args):
 def main():
     parser = argparse.ArgumentParser(description='Run MD agreement experiments')
     parser.add_argument('--approaches', nargs='+', required=True,
-                      choices=['majority_vote', 'aart', 'multitask', 'annotator_embedding'],
+                      choices=['majority_vote', 'aart', 'aart_rince', 'multitask', 'annotator_embedding'],
                       help='Approaches to run')
     parser.add_argument('--use_weighted_embeddings', action='store_true',
                       help='Use weighted embeddings for annotator embedding model')
@@ -305,10 +318,7 @@ def main():
         # Save raw results
         raw_results_path = results_dir / "raw_results.json"
         with open(raw_results_path, 'w') as f:
-            # Convert any non-serializable objects to strings
-            serializable_results = {k: (v if isinstance(v, dict) else {"error": str(v)}) 
-                                  for k, v in results.items()}
-            json.dump(serializable_results, f, indent=2)
+            json.dump(results, f, indent=2)
         
         # Create a summary file with key metrics
         summary_path = results_dir / "summary.json"
@@ -341,6 +351,7 @@ def main():
         print_final_summary(results)
     except Exception as e:
         logging.error(f"Error writing results: {str(e)}")
+        traceback.print_exc()
 
 def print_final_summary(results):
     """Print a summary of the results to the console"""
