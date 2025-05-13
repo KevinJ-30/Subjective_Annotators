@@ -3,6 +3,7 @@
 **/processed/
 **/results/
 **/logs/
+**/experiments/
 wandb/
 outputs/
 

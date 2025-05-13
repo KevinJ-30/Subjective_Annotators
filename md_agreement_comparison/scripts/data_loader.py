@@ -54,6 +54,7 @@ class MDAgreementDataset(Dataset):
         text = row['question']  # Changed from 'text' to 'question'
         label = row['answer_label']  # Changed from 'label' to 'answer_label'
         annotator = row['annotator_id']
+        text_id = row['original_id']  # Get the text ID
         
         # Convert annotator to ID
         annotator_id = self.annotator2id[annotator]
@@ -73,14 +74,19 @@ class MDAgreementDataset(Dataset):
             print(f"Text: {text}")
             print(f"Label: {label}")
             print(f"Annotator ID: {annotator_id}")
+            print(f"Text ID: {text_id}")
         
         return {
             'input_ids': encoding['input_ids'].squeeze().to(self.device),
             'attention_mask': encoding['attention_mask'].squeeze().to(self.device),
             'label': torch.tensor(int(label), device=self.device),
-            'annotator_id': torch.tensor(annotator_id, device=self.device)
+            'annotator_id': torch.tensor(annotator_id, device=self.device),
+            'text_id': torch.tensor(int(text_id), device=self.device)  # Add text_id to returned dict
         }
     
     @property
     def num_annotators(self):
         return self._num_annotators
+    @property
+    def text_ids(self):
+        return self.data['original_id'].tolist()

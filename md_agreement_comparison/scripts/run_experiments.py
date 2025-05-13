@@ -43,6 +43,7 @@ from models.implementations.aart import AARTModel
 from models.implementations.aart_Rince_new import NewRinceModel
 from models.implementations.annotator_embedding import AnnotatorEmbeddingModel
 from models.implementations.majority_vote import MajorityVoteModel
+from models.implementations.annotator_embedding_rince import AnnotatorEmbeddingRinceModel
 
 def setup_config(approach, add_noise=False, noise_level=0.2, use_grouping=False, annotators_per_group=4):
     """Setup configuration for a specific approach"""
@@ -74,6 +75,13 @@ def setup_config(approach, add_noise=False, noise_level=0.2, use_grouping=False,
     elif approach == 'annotator_embedding':
         config.use_annotator_embed = True
         config.use_annotation_embed = True
+    elif approach == 'annotator_embedding_rince':
+        config.use_annotator_embed = True
+        config.use_annotation_embed = True
+        config.lambda2 = 0.1
+        config.temperature = 0.07
+        config.rince_lambda = 1.0
+        config.rince_q = 0.5
     
     return config
 
@@ -116,6 +124,8 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
             trainer = Trainer(config, MultitaskModel)
         elif approach == 'annotator_embedding':
             trainer = Trainer(config, AnnotatorEmbeddingModel)
+        elif approach == 'annotator_embedding_rince':
+            trainer = Trainer(config, AnnotatorEmbeddingRinceModel)
         else:
             raise ValueError(f"Unknown approach: {approach}")
         
@@ -202,7 +212,7 @@ def get_experiment_id(args):
     
     # Add grouping info if enabled
     if args.use_grouping:
-        name_parts.append(f"group-{args.annotators_per_group}")
+        name_parts.append(f"grouping-{args.annotators_per_group}")
     
     # Add noise info if enabled
     if args.add_noise:
@@ -225,7 +235,7 @@ def get_experiment_id(args):
 def main():
     parser = argparse.ArgumentParser(description='Run MD agreement experiments')
     parser.add_argument('--approaches', nargs='+', required=True,
-                      choices=['majority_vote', 'aart', 'aart_rince', 'multitask', 'annotator_embedding'],
+                      choices=['majority_vote', 'aart', 'aart_rince', 'multitask', 'annotator_embedding', 'annotator_embedding_rince'],
                       help='Approaches to run')
     parser.add_argument('--use_weighted_embeddings', action='store_true',
                       help='Use weighted embeddings for annotator embedding model')

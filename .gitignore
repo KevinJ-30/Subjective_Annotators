@@ -6,6 +6,7 @@
 **/logs/
 wandb/
 outputs/
+**/experiments/
 
 # Keep .gitkeep files
 !.gitkeep

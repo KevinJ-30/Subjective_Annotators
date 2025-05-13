@@ -11,6 +11,7 @@ import pandas as pd
 from annotator_grouping import AnnotatorGrouper
 from data_loader import MDAgreementDataset
 from metrics import evaluate_model
+from group_by_instance_sampler import GroupByInstanceBatchSampler
 
 class Trainer:
     def __init__(self, config, model_class):
@@ -68,6 +69,9 @@ class Trainer:
         
         # Update config with num_annotators
         self.config.num_annotators = train_dataset.num_annotators
+        # Use the custom batch sampler
+        batch_sampler = GroupByInstanceBatchSampler(train_dataset, max_batch_size=32, shuffle=True)
+        self.train_loader = DataLoader(train_dataset, batch_sampler=batch_sampler)
         
         # Print final dataset statistics
         print(f"Final dataset statistics:")
@@ -76,11 +80,11 @@ class Trainer:
         print(f"- Label distribution: {train_data['answer_label'].mean():.3f}")
         
         # Create dataloaders
-        self.train_loader = DataLoader(
-            train_dataset, 
-            batch_size=self.config.batch_size, 
-            shuffle=True
-        )
+        #self.train_loader = DataLoader(
+        #    train_dataset, 
+        #    batch_size=self.config.batch_size, 
+        #    shuffle=True
+        #)
     
     def setup_model(self):
         """Setup model after data to ensure num_annotators is set"""
@@ -125,46 +129,59 @@ class Trainer:
         for epoch in range(self.config.num_epochs):
             self.model.train()
             total_loss = 0
-            
-            progress_bar = tqdm(self.train_loader, 
-                              desc=f"Epoch {epoch+1}/{self.config.num_epochs}",
-                              leave=True)
-            
-            for batch in progress_bar:
-                optimizer.zero_grad()
-                loss = self.model(**batch)
+
+            # Reset contrastive batch stats at the start of the epoch
+            if hasattr(self.model, 'reset_contrastive_batch_stats'):
+                self.model.reset_contrastive_batch_stats()
+
+            for batch in tqdm(self.train_loader, desc=f"Epoch {epoch + 1}/{self.config.num_epochs}"):
+                # Move batch to device
+                batch = {k: v.to(self.device) for k, v in batch.items()}
                 
-                if torch.isnan(loss):
-                    continue
-                    
+                # Forward pass
+                loss = self.model(
+                    input_ids=batch['input_ids'],
+                    attention_mask=batch['attention_mask'],
+                    annotator_id=batch['annotator_id'],
+                    label=batch['label'],
+                    text_id=batch['text_id']  # Pass text_id to model
+                )
+                
+                # Backward pass
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                 optimizer.step()
                 scheduler.step()
+                optimizer.zero_grad()
                 
                 total_loss += loss.item()
-                avg_loss = total_loss / (progress_bar.n + 1)
-                progress_bar.set_postfix({'loss': f'{avg_loss:.4f}'})
             
-            epoch_loss = total_loss / len(self.train_loader)
-            if epoch_loss < best_loss:
-                best_loss = epoch_loss
-                checkpoint_path = self.checkpoint_dir / "best_model.pt"
-                torch.save(self.model.state_dict(), checkpoint_path)
+            avg_loss = total_loss / len(self.train_loader)
+            print(f"Epoch {epoch + 1} - Average Loss: {avg_loss:.4f}")
+
+            # Print contrastive batch stats at the end of the epoch
+            if hasattr(self.model, 'contrastive_batches_total') and hasattr(self.model, 'contrastive_batches_zero'):
+                total = self.model.contrastive_batches_total
+                zero = self.model.contrastive_batches_zero
+                percent_zero = 100.0 * zero / max(1, total)
+                print(f"[EPOCH SUMMARY] {zero}/{total} batches ({percent_zero:.1f}%) had no valid contrastive loss.")
+
+            # Save checkpoint if loss improved
+            if avg_loss < best_loss:
+                best_loss = avg_loss
+                torch.save(self.model.state_dict(), self.checkpoint_dir / "best_model.pt")
+                print(f"Saved new best model with loss: {best_loss:.4f}")
+        
+            # Evaluate on test set
+            metrics = self.evaluate_model(self.test_loader)
+            print(f"Test metrics: {metrics}")
             
-            # Save epoch checkpoint
-            epoch_checkpoint_path = self.checkpoint_dir / f"model_epoch_{epoch+1}.pt"
-            torch.save(self.model.state_dict(), epoch_checkpoint_path)
-        
-        print("\n=== Evaluating model ===")
-        test_metrics = self.evaluate_model(self.test_loader)
-        
-        # Save metrics to file
-        metrics_path = self.checkpoint_dir.parent / "metrics.json"
-        with open(metrics_path, 'w') as f:
-            json.dump(test_metrics, f, indent=2)
-        
-        return test_metrics
+            # Log to wandb if enabled
+            if hasattr(self.config, 'use_wandb') and self.config.use_wandb:
+                wandb.log({
+                    'epoch': epoch + 1,
+                    'train_loss': avg_loss,
+                    'test_metrics': metrics
+                })
 
     def evaluate_model(self, dataloader):
         """Evaluate model on given dataloader"""
@@ -175,10 +192,14 @@ class Trainer:
         
         with torch.no_grad():
             for batch in tqdm(dataloader, desc="Evaluating"):
+                # Move batch to device
+                batch = {k: v.to(self.device) for k, v in batch.items()}
+                
                 outputs = self.model(
                     input_ids=batch['input_ids'],
                     attention_mask=batch['attention_mask'],
-                    annotator_id=batch['annotator_id']
+                    annotator_id=batch['annotator_id'],
+                    text_id=batch['text_id']  # Pass text_id to model
                 )
                 
                 preds = (torch.sigmoid(outputs) > 0.5).float()
