@@ -11,6 +11,7 @@ import pandas as pd
 from annotator_grouping import AnnotatorGrouper
 from data_loader import HSBDataset
 from metrics import evaluate_model
+from group_by_instance_sampler import GroupByInstanceBatchSampler
 
 class Trainer:
     def __init__(self, config, model_class):
@@ -68,7 +69,9 @@ class Trainer:
         
         # Update config with num_annotators
         self.config.num_annotators = train_dataset.num_annotators
-        
+        # Use the custom batch sampler
+        batch_sampler = GroupByInstanceBatchSampler(train_dataset, max_batch_size=32, shuffle=True)
+        self.train_loader = DataLoader(train_dataset, batch_sampler=batch_sampler)
         # Print final dataset statistics
         print(f"Final dataset statistics:")
         print(f"- Number of samples: {len(train_dataset)}")
@@ -76,11 +79,11 @@ class Trainer:
         print(f"- Label distribution: {train_data['answer_label'].mean():.3f}")
         
         # Create dataloaders
-        self.train_loader = DataLoader(
-            train_dataset, 
-            batch_size=self.config.batch_size, 
-            shuffle=True
-        )
+        #self.train_loader = DataLoader(
+        #    train_dataset, 
+        #    batch_size=self.config.batch_size, 
+        #    shuffle=True
+        #)
     
     def setup_model(self):
         """Setup model after data to ensure num_annotators is set"""

@@ -14,7 +14,7 @@ class NewRinceModel(BaseModel):
         self.contrastive_alpha = config.contrastive_alpha or 0.1
         self.temperature = getattr(config, "temperature", 0.07)  # new hyperparam
         self.lam = getattr(config, "rince_lambda", 1.0)          # new hyperparam
-        self.q = getattr(config, "rince_q", 0.5)                 # new hyperparam
+        self.q = getattr(config, "rince_q", 0.9)                 # new hyperparam
         
         nn.init.normal_(self.annotator_embeddings.weight, mean=0.0, std=0.1)
         self.annotator_embeddings = self.annotator_embeddings.to(self.device)
