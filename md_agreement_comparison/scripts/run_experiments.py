@@ -135,6 +135,12 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
         if approach != 'aart_rince':  # Only log for non-aart_rince approaches
             logging.info(f"Training completed for {approach}")
         
+        # After training and evaluation
+        metrics = trainer.evaluate_model(trainer.test_loader)
+        print(f"\nDebug - Raw metrics from evaluation:")
+        print(f"Metrics type: {type(metrics)}")
+        print(f"Metrics content: {metrics}")
+        
         return results
     except Exception as e:
         logging.error(f"Error running {approach}: {str(e)}")
@@ -305,8 +311,7 @@ def main():
     results = {}
     for approach in args.approaches:
         try:
-            logging.info(f"\nStarting experiment for {approach}")
-            # Pass experiment ID to run_single_experiment
+            print(f"\nDebug - Running {approach}")
             results[approach] = run_single_experiment(
                 approach, 
                 experiment_id=experiment_id,
@@ -316,17 +321,26 @@ def main():
                 annotators_per_group=args.annotators_per_group,
                 use_weighted_embeddings=args.use_weighted_embeddings
             )
+            print(f"\nDebug - Results for {approach}:")
+            print(f"Results type: {type(results[approach])}")
+            print(f"Results content: {results[approach]}")
         except Exception as e:
-            logging.error(f"Error running {approach}: {str(e)}")
+            print(f"\nError running {approach}:")
+            print(f"Error type: {type(e)}")
+            print(f"Error message: {str(e)}")
+            traceback.print_exc()
             results[approach] = {"error": str(e)}
     
     try:
         # Write final comparison to experiment-specific directory
         comparison_path = results_dir / "final_comparison.txt"
+        print(f"\nDebug - Writing comparison to {comparison_path}")
         write_final_comparison(results, comparison_path)
         
         # Save raw results
         raw_results_path = results_dir / "raw_results.json"
+        print(f"\nDebug - Writing raw results to {raw_results_path}")
+        print(f"Raw results content: {results}")
         with open(raw_results_path, 'w') as f:
             json.dump(results, f, indent=2)
         

@@ -62,12 +62,22 @@ class MetricsCalculator:
         self.annotator_ids = []
         
     def update(self, preds, labels, annotator_ids):
+        print("\nDebug - MetricsCalculator.update:")
+        print(f"Input preds type: {type(preds)}")
+        print(f"Input preds shape: {preds.shape if hasattr(preds, 'shape') else 'no shape'}")
+        print(f"Input preds values: {preds[:5] if hasattr(preds, '__getitem__') else preds}")
+        
         # Check if predictions are already binary
         if not torch.is_floating_point(preds) or preds.max() <= 1:
             predictions = preds
         else:
             # Convert logits to predictions if needed
             predictions = torch.sigmoid(preds) >= 0.5
+        
+        print("\nDebug - After processing:")
+        print(f"Processed preds type: {type(predictions)}")
+        print(f"Processed preds shape: {predictions.shape if hasattr(predictions, 'shape') else 'no shape'}")
+        print(f"Processed preds values: {predictions[:5] if hasattr(predictions, '__getitem__') else predictions}")
         
         # Move to CPU and convert to numpy
         predictions = predictions.cpu().numpy()
@@ -83,9 +93,18 @@ class MetricsCalculator:
         labels = np.array(self.labels)
         
         print("\nDebug Info:")
+        print(f"Predictions shape: {predictions.shape}")
+        print(f"Labels shape: {labels.shape}")
         print(f"Predictions distribution: {np.unique(predictions, return_counts=True)}")
         print(f"Labels distribution: {np.unique(labels, return_counts=True)}")
         print(f"Number of samples: {len(predictions)}")
+        
+        # Add more detailed debug info
+        print("\nDetailed Debug Info:")
+        print(f"First 10 predictions: {predictions[:10]}")
+        print(f"First 10 labels: {labels[:10]}")
+        print(f"Are predictions binary? {np.all(np.isin(predictions, [0, 1]))}")
+        print(f"Are labels binary? {np.all(np.isin(labels, [0, 1]))}")
         
         metrics = {
             'accuracy': accuracy_score(labels, predictions),
@@ -94,23 +113,8 @@ class MetricsCalculator:
             'recall': recall_score(labels, predictions)
         }
         
-        # Per-annotator metrics
-        unique_annotators = np.unique(self.annotator_ids)
-        annotator_f1s = []
-        
-        for annotator in unique_annotators:
-            mask = self.annotator_ids == annotator
-            if sum(mask) > 0:
-                ann_f1 = f1_score(
-                    labels[mask], 
-                    predictions[mask], 
-                    zero_division=0
-                )
-                annotator_f1s.append(ann_f1)
-                metrics[f'annotator_{annotator}_f1'] = ann_f1
-        
-        metrics['mean_annotator_f1'] = np.mean(annotator_f1s)
-        metrics['std_annotator_f1'] = np.std(annotator_f1s)
+        print("\nDebug - Final metrics:")
+        print(f"Metrics: {metrics}")
         
         return metrics
 

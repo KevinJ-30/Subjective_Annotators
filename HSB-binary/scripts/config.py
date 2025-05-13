@@ -16,7 +16,7 @@ class ExperimentConfig:
     max_length: int = 128
     batch_size: int = 32
     learning_rate: float = 1e-5
-    num_epochs: int = 1
+    num_epochs: int = 10
     seed: int = 42
     num_annotators: int = None  # Will be set during data setup
     

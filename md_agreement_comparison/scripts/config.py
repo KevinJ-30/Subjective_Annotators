@@ -8,7 +8,7 @@ class ExperimentConfig:
     approach: str  # 'multitask', 'aart', or 'annotator_embedding'
     
     # Device configuration
-    device: str = "cuda:3"  # Specifically use GPU 3
+    device: str = "cuda:1"  # Specifically use GPU 3
     n_gpu: int = 1  # We'll use single GPU mode
     
     # Model parameters
