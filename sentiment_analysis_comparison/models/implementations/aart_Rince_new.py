@@ -115,9 +115,9 @@ class NewRinceModel(BaseModel):
         logits = self.classifier(combined)
         
         if label is not None:
-            # Classification loss
-            loss_fct = nn.BCEWithLogitsLoss()
-            cls_loss = loss_fct(logits.view(-1), label.float().view(-1))
+            # Classification loss - using CrossEntropyLoss for multiclass
+            loss_fct = nn.CrossEntropyLoss()
+            cls_loss = loss_fct(logits, label.long())  # Changed to handle multiclass
             
             # Contrastive loss for annotator embeddings
             contra_loss = self.compute_rince_loss(

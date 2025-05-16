@@ -21,7 +21,7 @@ class MultitaskModel(BaseModel):
         # Loss function
         self.criterion = nn.CrossEntropyLoss()
         
-    def forward(self, input_ids, attention_mask, annotator_id, label=None, sample_index=None):
+    def forward(self, input_ids, attention_mask, annotator_id, label=None, text_id = None, sample_index=None):
         # Get text representation from backbone
         outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
         pooled_output = outputs[1] if isinstance(self.backbone, nn.DataParallel) else outputs.pooler_output

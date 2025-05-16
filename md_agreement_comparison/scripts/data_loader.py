@@ -3,6 +3,7 @@ import torch
 from torch.utils.data import Dataset
 from transformers import AutoTokenizer
 import logging
+import numpy as np
 
 class MDAgreementDataset(Dataset):
     def __init__(self, data, tokenizer, max_length=128, device=None, noise_config=None):
@@ -90,3 +91,40 @@ class MDAgreementDataset(Dataset):
     @property
     def text_ids(self):
         return self.data['original_id'].tolist()
+
+def subsample_annotators(data, n_annotators, random_state=42):
+    """
+    Subsample n_annotators from the dataset.
+    
+    Args:
+        data (pd.DataFrame): Input dataset
+        n_annotators (int): Number of annotators to keep
+        random_state (int): Random seed for reproducibility
+        
+    Returns:
+        pd.DataFrame: Dataset with only the selected annotators
+        list: List of selected annotator IDs
+    """
+    # Get unique annotators
+    unique_annotators = data['annotator_id'].unique()
+    
+    if n_annotators >= len(unique_annotators):
+        print(f"Requested {n_annotators} annotators but only {len(unique_annotators)} available. Using all annotators.")
+        return data, unique_annotators.tolist()
+    
+    # Randomly select n_annotators
+    np.random.seed(random_state)
+    selected_annotators = np.random.choice(unique_annotators, n_annotators, replace=False)
+    
+    # Filter data to only include selected annotators
+    subsampled_data = data[data['annotator_id'].isin(selected_annotators)].copy()
+    
+    # Log statistics
+    print(f"\nAnnotator Subsampling Statistics:")
+    print(f"Original number of annotators: {len(unique_annotators)}")
+    print(f"Selected number of annotators: {len(selected_annotators)}")
+    print(f"Selected annotators: {sorted(selected_annotators)}")
+    print(f"Original dataset size: {len(data)}")
+    print(f"Subsampled dataset size: {len(subsampled_data)}")
+    
+    return subsampled_data, selected_annotators.tolist()

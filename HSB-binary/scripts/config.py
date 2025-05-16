@@ -8,7 +8,7 @@ class ExperimentConfig:
     approach: str  # 'multitask', 'aart', or 'annotator_embedding'
     
     # Device configuration
-    device: str = "cuda:2"  # Specifically use GPU 3
+    device: str = "cuda:5"  # Specifically use GPU 3
     n_gpu: int = 1  # We'll use single GPU mode
     
     # Model parameters
@@ -34,9 +34,12 @@ class ExperimentConfig:
     
     # Noise configuration
     add_noise: bool = False
-    noise_strategy: str = 'custom'  # 'fixed', 'random', or 'custom'
+    noise_level: float = 0.2
+    noise_strategy: str = 'fixed'  # 'fixed', 'random', 'custom', or 'renegade'
     noise_levels: Optional[dict] = None
     default_noise: float = 0.2  # default noise level for non-specified annotators
+    renegade_percent: float = 0.1  # percentage of annotators to be renegades
+    renegade_flip_prob: float = 0.7  # probability of flipping labels for renegade annotators
     
     # Add these new fields after existing ones
     use_weighted_embeddings: bool = False
@@ -51,10 +54,3 @@ class ExperimentConfig:
         print(f"Using device: {self.device}")
         if self.n_gpu > 0:
             print(f"Number of GPUs available: {self.n_gpu}")
-    def __init__(self, approach, add_noise, noise_level, use_grouping, annotators_per_group):
-        self.approach = approach
-        self.add_noise = add_noise
-        self.noise_level = noise_level
-        self.use_grouping = use_grouping
-        self.annotators_per_group = annotators_per_group
-        # ... existing code ...

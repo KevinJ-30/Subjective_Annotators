@@ -1,105 +1,131 @@
 import numpy as np
 import pandas as pd
+import logging
 from typing import Dict, List, Optional, Union
 
 def create_noise_config(
-    annotator_ids: List[str],
-    noise_levels: Optional[Dict[str, float]] = None,
-    default_noise: float = 0.2,
-    strategy: str = 'custom'
+    num_annotators: int,
+    strategy: str = 'fixed',
+    custom_levels: Optional[Dict[int, float]] = None,
+    base_noise: float = 0.2,
+    renegade_percent: float = 0.1,
+    renegade_flip_prob: float = 0.7,
+    num_classes: int = 5
 ) -> Dict:
     """
     Create a noise configuration for annotators
     
     Args:
-        annotator_ids: List of annotator IDs
-        noise_levels: Dictionary mapping annotator IDs to noise levels
-        default_noise: Default noise level for annotators not in noise_levels
-        strategy: Noise strategy ('fixed', 'random', or 'custom')
-        
-    Returns:
-        Noise configuration dictionary
+        num_annotators: total number of annotators
+        strategy: 'fixed', 'random', 'custom', or 'renegade'
+        custom_levels: dict of {annotator_id: noise_level}
+        base_noise: default noise level for fixed strategy or non-specified annotators
+        renegade_percent: percentage of annotators to be renegades (only for renegade strategy)
+        renegade_flip_prob: probability of flipping labels for renegade annotators
+        num_classes: number of classes in the dataset (default: 5 for sentiment)
     """
-    config = {
+    noise_levels = {}
+    
+    if strategy == 'renegade':
+        # Select random annotators to be renegades
+        num_renegades = max(1, int(num_annotators * renegade_percent))
+        renegade_ids = np.random.choice(num_annotators, size=num_renegades, replace=False)
+        
+        # Set high noise for renegades, zero noise for others
+        for ann_id in range(num_annotators):
+            if ann_id in renegade_ids:
+                noise_levels[ann_id] = renegade_flip_prob
+            else:
+                noise_levels[ann_id] = 0.0  # Zero noise for non-renegades
+                
+        logging.info(f"Selected {num_renegades} renegade annotators with {renegade_flip_prob*100}% flip probability")
+        logging.info(f"Renegade annotator IDs: {sorted(renegade_ids)}")
+        logging.info(f"Non-renegade annotators will have 0% noise")
+        
+    elif strategy == 'custom' and custom_levels is not None:
+        # Start with default noise level for all annotators
+        noise_levels = {i: base_noise for i in range(num_annotators)}
+        # Update with custom levels
+        noise_levels.update(custom_levels)
+        
+    elif strategy == 'random':
+        for ann_id in range(num_annotators):
+            noise_levels[ann_id] = np.random.uniform(0.1, 0.3)
+            
+    else:  # fixed strategy
+        noise_levels = {i: base_noise for i in range(num_annotators)}
+    
+    return {
         'add_noise': True,
         'strategy': strategy,
-        'default_noise': default_noise
+        'noise_levels': noise_levels,
+        'default_noise': base_noise,
+        'num_classes': num_classes
     }
-    
-    if strategy == 'fixed':
-        # All annotators get the same noise level
-        config['noise_levels'] = {ann: default_noise for ann in annotator_ids}
-    elif strategy == 'random':
-        # Random noise levels between 0 and default_noise
-        config['noise_levels'] = {
-            ann: np.random.uniform(0, default_noise) 
-            for ann in annotator_ids
-        }
-    elif strategy == 'custom':
-        # Use provided noise levels or default
-        config['noise_levels'] = {}
-        for ann in annotator_ids:
-            if noise_levels and ann in noise_levels:
-                config['noise_levels'][ann] = noise_levels[ann]
-            else:
-                config['noise_levels'][ann] = default_noise
-    else:
-        raise ValueError(f"Unknown noise strategy: {strategy}")
-    
-    return config
 
-def add_annotator_noise(
-    data: pd.DataFrame,
-    noise_config: Dict,
-    num_classes: int = 5
-) -> pd.DataFrame:
+def add_annotator_noise(data: pd.DataFrame, noise_config: Dict, num_classes: int = 5) -> pd.DataFrame:
     """
-    Add noise to annotator labels
+    Add noise to annotator labels based on noise configuration
     
     Args:
         data: DataFrame with annotator labels
-        noise_config: Noise configuration
-        num_classes: Number of classes in the dataset
+        noise_config: Noise configuration dictionary
+        num_classes: Number of classes in the dataset (default: 5 for sentiment)
         
     Returns:
         DataFrame with noisy labels
     """
     if not noise_config.get('add_noise', False):
         return data
-    
-    # Create a copy of the data
+        
+    logging.info(f"Applying noise with config: {noise_config}")
     noisy_data = data.copy()
     
-    # Get noise levels
-    noise_levels = noise_config.get('noise_levels', {})
-    default_noise = noise_config.get('default_noise', 0.2)
+    # Track original and noisy distributions
+    original_dist = noisy_data['answer_label'].value_counts()
+    flips_per_annotator = {}
     
-    # Apply noise to each annotator
-    for annotator_id in noisy_data['annotator_id'].unique():
+    # Get noise levels for each annotator
+    noise_levels = noise_config.get('noise_levels', {})
+    if not noise_levels:
+        # If no specific levels provided, use default noise
+        default_noise = noise_config.get('default_noise', 0.2)
+        noise_levels = {ann: default_noise for ann in noisy_data['annotator_id'].unique()}
+    
+    # For each annotator's data
+    for annotator in noisy_data['annotator_id'].unique():
+        mask = noisy_data['annotator_id'] == annotator
+        annotator_data = noisy_data[mask]
+        num_flips = 0
+        
         # Get noise level for this annotator
-        noise_level = noise_levels.get(annotator_id, default_noise)
+        noise_level = noise_levels.get(annotator, noise_config.get('default_noise', 0.2))
         
-        # Get indices for this annotator
-        annotator_mask = noisy_data['annotator_id'] == annotator_id
+        # Flip labels with probability noise_level
+        for idx in annotator_data.index:
+            if np.random.random() < noise_level:
+                current_label = noisy_data.at[idx, 'answer_label']
+                # Generate a new label different from the current one
+                new_label = current_label
+                while new_label == current_label:
+                    new_label = np.random.randint(0, num_classes)
+                noisy_data.at[idx, 'answer_label'] = new_label
+                num_flips += 1
         
-        # Apply noise with probability noise_level
-        noise_mask = np.random.random(len(noisy_data)) < noise_level
-        noise_mask = noise_mask & annotator_mask
-        
-        # For samples with noise, randomly change the label
-        if noise_mask.any():
-            # Get current labels
-            current_labels = noisy_data.loc[noise_mask, 'answer_label'].values
-            
-            # Generate random new labels (different from current)
-            new_labels = np.random.randint(0, num_classes, size=noise_mask.sum())
-            
-            # Ensure new labels are different from current labels
-            for i in range(len(new_labels)):
-                while new_labels[i] == current_labels[i]:
-                    new_labels[i] = np.random.randint(0, num_classes)
-            
-            # Update labels
-            noisy_data.loc[noise_mask, 'answer_label'] = new_labels
+        flips_per_annotator[annotator] = {
+            'total_samples': len(annotator_data),
+            'flipped_samples': num_flips,
+            'flip_rate': num_flips / len(annotator_data),
+            'noise_level': noise_level
+        }
+    
+    # Log noise statistics
+    noisy_dist = noisy_data['answer_label'].value_counts()
+    logging.info("\nNoise Application Statistics:")
+    logging.info(f"Original label distribution:\n{original_dist}")
+    logging.info(f"Noisy label distribution:\n{noisy_dist}")
+    logging.info("\nPer-annotator noise statistics:")
+    for annotator, stats in flips_per_annotator.items():
+        logging.info(f"Annotator {annotator}: {stats['flipped_samples']}/{stats['total_samples']} labels flipped ({stats['flip_rate']*100:.2f}%) [noise level: {stats['noise_level']*100:.2f}%]")
     
     return noisy_data 

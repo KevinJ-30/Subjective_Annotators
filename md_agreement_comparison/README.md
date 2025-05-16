@@ -43,7 +43,14 @@ python scripts/run_experiments.py
 Add annotator-specific noise:
 
 ```bash
+# Fixed noise level for all annotators
 python scripts/run_experiments.py --add_noise --noise_level 0.2
+
+# Random noise levels for each annotator
+python scripts/run_experiments.py --add_noise --noise_strategy random
+
+# Renegade annotators (some annotators have high chance of flipping labels)
+python scripts/run_experiments.py --add_noise --noise_strategy renegade --renegade_percent 0.1 --renegade_flip_prob 0.7
 ```
 
 ### Specific Approaches
@@ -62,6 +69,9 @@ Parameters:
 - `--approaches`: List of approaches to run ['aart', 'multitask', 'annotator_embedding']
 - `--add_noise`: Flag to enable noise injection
 - `--noise_level`: Float between 0.0 and 1.0 (default: 0.2)
+- `--noise_strategy`: Strategy for adding noise ['fixed', 'random', 'custom', 'renegade']
+- `--renegade_percent`: Percentage of annotators to be renegades (default: 0.1)
+- `--renegade_flip_prob`: Probability of flipping labels for renegade annotators (default: 0.7)
 
 ## Project Structure
 

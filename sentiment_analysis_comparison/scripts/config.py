@@ -1,22 +1,23 @@
 from dataclasses import dataclass
 from typing import Optional
 import torch
+from pathlib import Path
 
 @dataclass
 class ExperimentConfig:
     # Required arguments must come first
-    approach: str  # 'multitask', 'aart', or 'annotator_embedding'
+    approach: str  # 'multitask', 'aart', 'annotator_embedding', 'majority_vote', or 'aart_rince'
     
     # Device configuration
-    device: torch.device = torch.device("cuda:1")  # Use GPU 3 by default
-    n_gpu: int = 1  # We'll use single GPU mode
+    device: torch.device = torch.device("cuda:0")
+    n_gpu: int = 1
     
     # Model parameters
     model_name: str = "roberta-base"
     max_length: int = 128
     batch_size: int = 32
     learning_rate: float = 1e-5
-    num_epochs: int = 10
+    num_epochs: int = 1
     seed: int = 42
     num_annotators: int = None  # Will be set during data setup
     
@@ -27,22 +28,25 @@ class ExperimentConfig:
     # Model specific
     use_annotator_embed: bool = False
     use_annotation_embed: bool = False
+    use_majority_vote: bool = False
     
     # AART specific
     lambda2: Optional[float] = None
     contrastive_alpha: Optional[float] = None
     
+    # Rince specific
+    temperature: Optional[float] = None
+    rince_lambda: Optional[float] = None
+    rince_q: Optional[float] = None
+    
     # Noise configuration
     add_noise: bool = False
-    noise_strategy: str = 'custom'  # 'fixed', 'random', or 'custom'
-    noise_levels: Optional[dict] = None
-    default_noise: float = 0.2  # default noise level for non-specified annotators
+    noise_strategy: str = 'fixed'  # 'fixed', 'random', 'custom', or 'renegade'
+    noise_level: float = 0.2  # default noise level
+    renegade_percent: float = 0.1  # percentage of annotators to be renegades
+    renegade_flip_prob: float = 0.7  # probability of flipping labels for renegades
     
-    # Add these new fields after existing ones
-    use_weighted_embeddings: bool = False
-    add_to_cls_only: bool = True
-    
-    # Add new fields for grouping
+    # Grouping configuration
     use_grouping: bool = False
     annotators_per_group: int = 4
     group_min_agreement: float = 0.6
@@ -50,15 +54,11 @@ class ExperimentConfig:
     # Multiclass specific
     num_classes: int = 5  # Number of sentiment classes
     
+    # Experiment tracking
+    experiment_id: Optional[str] = None
+    checkpoint_dir: Optional[Path] = None
+    
     def __post_init__(self):
         print(f"Using device: {self.device}")
         if self.n_gpu > 0:
-            print(f"Number of GPUs available: {self.n_gpu}")
-            
-    def __init__(self, approach, add_noise, noise_level, use_grouping, annotators_per_group):
-        self.approach = approach
-        self.add_noise = add_noise
-        self.noise_level = noise_level
-        self.use_grouping = use_grouping
-        self.annotators_per_group = annotators_per_group
-        # ... existing code ... 
+            print(f"Number of GPUs available: {self.n_gpu}") 

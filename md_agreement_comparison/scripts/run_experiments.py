@@ -45,7 +45,7 @@ from models.implementations.annotator_embedding import AnnotatorEmbeddingModel
 from models.implementations.majority_vote import MajorityVoteModel
 from models.implementations.annotator_embedding_rince import AnnotatorEmbeddingRinceModel
 
-def setup_config(approach, add_noise=False, noise_level=0.2, use_grouping=False, annotators_per_group=4):
+def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fixed', renegade_percent=0.1, renegade_flip_prob=0.7, use_grouping=False, annotators_per_group=4):
     """Setup configuration for a specific approach"""
     logging.info(f"Setting up configuration for {approach}")
     
@@ -54,6 +54,9 @@ def setup_config(approach, add_noise=False, noise_level=0.2, use_grouping=False,
         approach=approach,
         add_noise=add_noise,
         noise_level=noise_level,
+        noise_strategy=noise_strategy,
+        renegade_percent=renegade_percent,
+        renegade_flip_prob=renegade_flip_prob,
         use_grouping=use_grouping,
         annotators_per_group=annotators_per_group
     )
@@ -69,7 +72,7 @@ def setup_config(approach, add_noise=False, noise_level=0.2, use_grouping=False,
         config.contrastive_alpha = 0.1
         config.temperature = 0.07
         config.rince_lambda = 1.0
-        config.rince_q = 0.5
+        config.rince_q = 1.0
     elif approach == 'multitask':
         pass
     elif approach == 'annotator_embedding':
@@ -81,11 +84,11 @@ def setup_config(approach, add_noise=False, noise_level=0.2, use_grouping=False,
         config.lambda2 = 0.1
         config.temperature = 0.07
         config.rince_lambda = 1.0
-        config.rince_q = 0.5
+        config.rince_q = 1.0
     
     return config
 
-def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=0.2, use_grouping=False, annotators_per_group=4, use_weighted_embeddings=False):
+def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=0.2, noise_strategy='fixed', renegade_percent=0.1, renegade_flip_prob=0.7, use_grouping=False, annotators_per_group=4, use_weighted_embeddings=False):
     """Run a single experiment with the specified approach"""
     try:
         if approach != 'aart_rince':  # Only log for non-aart_rince approaches
@@ -95,7 +98,10 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
         config = setup_config(
             approach=approach, 
             add_noise=add_noise, 
-            noise_level=noise_level, 
+            noise_level=noise_level,
+            noise_strategy=noise_strategy,
+            renegade_percent=renegade_percent,
+            renegade_flip_prob=renegade_flip_prob,
             use_grouping=use_grouping, 
             annotators_per_group=annotators_per_group
         )
@@ -222,7 +228,10 @@ def get_experiment_id(args):
     
     # Add noise info if enabled
     if args.add_noise:
-        name_parts.append(f"noise-{args.noise_level}")
+        if args.noise_strategy == 'renegade':
+            name_parts.append(f"renegade-{args.renegade_percent}-{args.renegade_flip_prob}")
+        else:
+            name_parts.append(f"noise-{args.noise_level}")
     
     # Add weighted embeddings info if enabled
     if args.use_weighted_embeddings:
@@ -249,6 +258,13 @@ def main():
                       help='Add noise to labels during training')
     parser.add_argument('--noise_level', type=float, default=0.2,
                       help='Level of noise to add to labels (default: 0.2)')
+    parser.add_argument('--noise_strategy', type=str, default='fixed',
+                      choices=['fixed', 'random', 'custom', 'renegade'],
+                      help='Strategy for adding noise (default: fixed)')
+    parser.add_argument('--renegade_percent', type=float, default=0.1,
+                      help='Percentage of annotators to be renegades (default: 0.1)')
+    parser.add_argument('--renegade_flip_prob', type=float, default=0.7,
+                      help='Probability of flipping labels for renegade annotators (default: 0.7)')
     parser.add_argument('--use_grouping', action='store_true',
                       help='Enable annotator grouping')
     parser.add_argument('--annotators_per_group', type=int, default=4,
@@ -298,6 +314,9 @@ def main():
             'use_weighted_embeddings': args.use_weighted_embeddings,
             'add_noise': args.add_noise,
             'noise_level': args.noise_level,
+            'noise_strategy': args.noise_strategy,
+            'renegade_percent': args.renegade_percent,
+            'renegade_flip_prob': args.renegade_flip_prob,
             'use_grouping': args.use_grouping,
             'annotators_per_group': args.annotators_per_group,
             'timestamp': datetime.now().isoformat()
@@ -317,6 +336,9 @@ def main():
                 experiment_id=experiment_id,
                 add_noise=args.add_noise, 
                 noise_level=args.noise_level,
+                noise_strategy=args.noise_strategy,
+                renegade_percent=args.renegade_percent,
+                renegade_flip_prob=args.renegade_flip_prob,
                 use_grouping=args.use_grouping,
                 annotators_per_group=args.annotators_per_group,
                 use_weighted_embeddings=args.use_weighted_embeddings

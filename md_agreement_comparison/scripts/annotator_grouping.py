@@ -25,30 +25,62 @@ class AnnotatorGrouper:
         
         logging.info(f"\nOriginal number of annotators: {n_annotators}")
         
-        # Calculate pairwise kappa matrix
+        # Calculate pairwise kappa matrix more efficiently
         self.kappa_matrix = np.zeros((n_annotators, n_annotators))
         logging.info("\nCalculating pairwise Cohen's Kappa...")
         
+        # Create a mapping of annotator IDs to indices
+        ann_to_idx = {ann: idx for idx, ann in enumerate(unique_annotators)}
+        
+        # Pre-compute annotator labels for each instance
+        instance_labels = {}
+        for _, row in data.iterrows():
+            uid = row['uid']
+            ann_id = row['annotator_id']
+            label = row['answer_label']
+            if uid not in instance_labels:
+                instance_labels[uid] = {}
+            instance_labels[uid][ann_id] = label
+        
+        # Calculate Kappa for each pair of annotators
         kappa_scores = []
+        total_pairs = (n_annotators * (n_annotators - 1)) // 2
+        processed_pairs = 0
+        
         for i, ann1 in enumerate(unique_annotators):
             for j, ann2 in enumerate(unique_annotators[i+1:], i+1):
-                mask1 = data['annotator_id'] == ann1
-                mask2 = data['annotator_id'] == ann2
+                processed_pairs += 1
+                if processed_pairs % 1000 == 0:
+                    logging.info(f"Processing pair {processed_pairs}/{total_pairs}")
                 
-                common_indices = set(data[mask1].index) & set(data[mask2].index)
-                if common_indices:
-                    labels1 = data.loc[common_indices & set(data[mask1].index), 'answer_label']
-                    labels2 = data.loc[common_indices & set(data[mask2].index), 'answer_label']
+                # Get common instances and their labels
+                common_instances = []
+                for uid, labels in instance_labels.items():
+                    if ann1 in labels and ann2 in labels:
+                        common_instances.append((labels[ann1], labels[ann2]))
+                
+                if not common_instances:
+                    continue
+                    
+                # Calculate Kappa
+                labels1, labels2 = zip(*common_instances)
+                try:
                     kappa = cohen_kappa_score(labels1, labels2)
-                    self.kappa_matrix[i, j] = self.kappa_matrix[j, i] = kappa
-                    kappa_scores.append(kappa)
+                    if not np.isnan(kappa):  # Only use valid Kappa scores
+                        self.kappa_matrix[i, j] = self.kappa_matrix[j, i] = kappa
+                        kappa_scores.append(kappa)
+                except Exception as e:
+                    logging.warning(f"Error calculating Kappa for annotators {ann1} and {ann2}: {str(e)}")
+                    continue
         
         # Log kappa statistics
-        logging.info(f"Kappa Score Statistics:")
-        logging.info(f"Mean Kappa: {np.mean(kappa_scores):.3f}")
-        logging.info(f"Std Kappa: {np.std(kappa_scores):.3f}")
-        logging.info(f"Min Kappa: {np.min(kappa_scores):.3f}")
-        logging.info(f"Max Kappa: {np.max(kappa_scores):.3f}")
+        if kappa_scores:
+            logging.info(f"Kappa Score Statistics:")
+            logging.info(f"Mean Kappa: {np.mean(kappa_scores):.3f}")
+            logging.info(f"Std Kappa: {np.std(kappa_scores):.3f}")
+            logging.info(f"Min Kappa: {np.min(kappa_scores):.3f}")
+            logging.info(f"Max Kappa: {np.max(kappa_scores):.3f}")
+            logging.info(f"Number of valid Kappa scores: {len(kappa_scores)}")
         
         # Calculate number of groups (ensuring max group size)
         n_groups = max(1, n_annotators // self.n_per_group)
@@ -81,8 +113,8 @@ class AnnotatorGrouper:
                 # Sort annotators by their average kappa with others in the group
                 group_kappas = []
                 for ann in annotators:
-                    ann_idx = np.where(unique_annotators == ann)[0][0]
-                    group_kappa = np.mean([self.kappa_matrix[ann_idx, np.where(unique_annotators == other)[0][0]] 
+                    ann_idx = ann_to_idx[ann]
+                    group_kappa = np.mean([self.kappa_matrix[ann_idx, ann_to_idx[other]] 
                                          for other in annotators if other != ann])
                     group_kappas.append((ann, group_kappa))
                 
