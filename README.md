@@ -128,3 +128,87 @@ Results are saved in the following locations:
 - Model checkpoints are saved during training
 - Logs are generated for debugging and analysis
 - Both projects use the same model architectures but are adapted for their specific tasks
+
+## Running Experiments
+
+### Basic Usage
+
+To run experiments with default settings:
+
+```bash
+python sentiment_analysis_comparison/scripts/run_experiments.py --approaches majority_vote aart multitask annotator_embedding
+```
+
+### Adding Noise
+
+You can add noise to the training data using different strategies:
+
+1. Fixed noise (same level for all annotators):
+```bash
+python sentiment_analysis_comparison/scripts/run_experiments.py --approaches majority_vote aart multitask annotator_embedding --add_noise --noise_strategy fixed --noise_level 0.2
+```
+
+2. Random noise (different levels per annotator):
+```bash
+python sentiment_analysis_comparison/scripts/run_experiments.py --approaches majority_vote aart multitask annotator_embedding --add_noise --noise_strategy random
+```
+
+3. Renegade annotators (specific annotators with high noise):
+```bash
+python sentiment_analysis_comparison/scripts/run_experiments.py --approaches majority_vote aart multitask annotator_embedding --add_noise --noise_strategy renegade --renegade_percent 0.1 --renegade_flip_prob 0.7
+```
+
+The renegade strategy:
+- Selects a percentage of annotators as "renegades" (default: 10%)
+- Gives renegades a high probability of flipping labels (default: 70%)
+- Non-renegade annotators have 0% noise
+- For sentiment analysis, flipped labels are changed to a different class
+- For binary tasks (HSB, MD), flipped labels are inverted
+
+### Annotator Grouping
+
+To enable annotator grouping:
+
+```bash
+python sentiment_analysis_comparison/scripts/run_experiments.py --approaches majority_vote aart multitask annotator_embedding --use_grouping --annotators_per_group 4
+```
+
+## Results
+
+Results are saved in the `experiments` directory with a unique experiment ID. Each experiment includes:
+- Raw results in JSON format
+- A human-readable comparison
+- A summary of key metrics
+- Logs of the experiment run
+
+The experiment ID includes information about the approaches used, noise settings, and grouping configuration.
+
+## Available Tasks
+
+1. Sentiment Analysis (5 classes)
+2. HSB (Hierarchical Softmax Binary)
+3. MD Agreement (Multi-Domain)
+
+Each task has its own directory with specific implementations and configurations.
+
+## Requirements
+
+- Python 3.8+
+- PyTorch
+- Transformers
+- Pandas
+- NumPy
+- scikit-learn
+
+## Citation
+
+If you use this code in your research, please cite our paper:
+
+```bibtex
+@article{your-paper,
+  title={Your Paper Title},
+  author={Your Name},
+  journal={Journal Name},
+  year={2024}
+}
+```
