@@ -81,7 +81,7 @@ def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fix
     
     return config
 
-def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=0.2, noise_strategy='fixed', renegade_percent=0.1, renegade_flip_prob=0.7, use_grouping=False, annotators_per_group=4):
+def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=0.2, noise_strategy='fixed', renegade_percent=0.1, renegade_flip_prob=0.7, use_grouping=False, annotators_per_group=4, use_weighted_embeddings=False):
     """Run a single experiment with the specified approach"""
     try:
         logging.info(f"\nStarting experiment for {approach}")
@@ -102,6 +102,10 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
         config.experiment_id = experiment_id
         config.checkpoint_dir = Path(f"experiments/{experiment_id}/models/checkpoints/{approach}")
         config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Set weighted embeddings if requested
+        if use_weighted_embeddings:
+            config.use_weighted_embeddings = True
         
         # Set data paths in config
         config.train_path = 'data/sentiment_analysis/processed/train.json'
@@ -246,6 +250,8 @@ def main():
                       help='Enable annotator grouping')
     parser.add_argument('--annotators_per_group', type=int, default=4,
                       help='Number of annotators per group when grouping is enabled')
+    parser.add_argument('--use_weighted_embeddings', action='store_true',
+                      help='Use weighted embeddings for annotator embedding model')
     parser.add_argument('--experiment_id', type=str, default=None,
                       help='Optional experiment ID to use (if not provided, a new one will be generated)')
     
@@ -295,6 +301,7 @@ def main():
             'renegade_flip_prob': args.renegade_flip_prob,
             'use_grouping': args.use_grouping,
             'annotators_per_group': args.annotators_per_group,
+            'use_weighted_embeddings': args.use_weighted_embeddings,
             'timestamp': datetime.now().isoformat()
         }
         json.dump(config, f, indent=2)
@@ -315,7 +322,8 @@ def main():
                 renegade_percent=args.renegade_percent,
                 renegade_flip_prob=args.renegade_flip_prob,
                 use_grouping=args.use_grouping,
-                annotators_per_group=args.annotators_per_group
+                annotators_per_group=args.annotators_per_group,
+                use_weighted_embeddings=args.use_weighted_embeddings
             )
         except Exception as e:
             logging.error(f"Error running {approach}: {str(e)}")

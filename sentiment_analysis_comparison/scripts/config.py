@@ -51,6 +51,9 @@ class ExperimentConfig:
     annotators_per_group: int = 4
     group_min_agreement: float = 0.6
     
+    # Weighted embeddings configuration
+    use_weighted_embeddings: bool = False
+    
     # Multiclass specific
     num_classes: int = 5  # Number of sentiment classes
     
