@@ -35,6 +35,7 @@ class MDAgreementDataset(Dataset):
         unique_annotators = self.data['annotator_id'].unique()
         self.annotator2id = {ann: idx for idx, ann in enumerate(unique_annotators)}
         self._num_annotators = len(unique_annotators)
+        self._num_labels = len(self.data['answer_label'].unique())
         
         # Print statistics
         print(f"\nDataset Statistics:")
@@ -88,6 +89,9 @@ class MDAgreementDataset(Dataset):
     @property
     def num_annotators(self):
         return self._num_annotators
+    @property
+    def num_labels(self):
+        return self._num_labels    
     @property
     def text_ids(self):
         return self.data['original_id'].tolist()
