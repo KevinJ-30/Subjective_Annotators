@@ -69,6 +69,7 @@ class Trainer:
         
         # Update config with num_annotators
         self.config.num_annotators = train_dataset.num_annotators
+        self.config.num_labels = train_dataset.num_labels
         # Use the custom batch sampler
         batch_sampler = GroupByInstanceBatchSampler(train_dataset, max_batch_size=32, shuffle=True)
         self.train_loader = DataLoader(train_dataset, batch_sampler=batch_sampler)

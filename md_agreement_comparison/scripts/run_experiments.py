@@ -43,7 +43,8 @@ from models.implementations.aart import AARTModel
 from models.implementations.aart_Rince_new import NewRinceModel
 from models.implementations.annotator_embedding import AnnotatorEmbeddingModel
 from models.implementations.majority_vote import MajorityVoteModel
-from models.implementations.annotator_embedding_rince import AnnotatorEmbeddingRinceModel
+# from models.implementations.annotator_embedding_rince import AnnotatorEmbeddingRinceModel
+from models.implementations.MichEmbed_Rince import MichEmbedRince
 
 def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fixed', renegade_percent=0.1, renegade_flip_prob=0.7, use_grouping=False, annotators_per_group=4):
     """Setup configuration for a specific approach"""
@@ -78,13 +79,13 @@ def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fix
     elif approach == 'annotator_embedding':
         config.use_annotator_embed = True
         config.use_annotation_embed = True
-    elif approach == 'annotator_embedding_rince':
+    elif approach == 'michembed_rince':
         config.use_annotator_embed = True
         config.use_annotation_embed = True
         config.lambda2 = 0.1
         config.temperature = 0.07
         config.rince_lambda = 1.0
-        config.rince_q = 1.0
+        config.rince_q = 0.75
     
     return config
 
@@ -130,8 +131,8 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
             trainer = Trainer(config, MultitaskModel)
         elif approach == 'annotator_embedding':
             trainer = Trainer(config, AnnotatorEmbeddingModel)
-        elif approach == 'annotator_embedding_rince':
-            trainer = Trainer(config, AnnotatorEmbeddingRinceModel)
+        elif approach == 'michembed_rince':
+            trainer = Trainer(config, MichEmbedRince)
         else:
             raise ValueError(f"Unknown approach: {approach}")
         
@@ -204,7 +205,7 @@ def write_final_comparison(results, output_path):
         
         f.write("\n=== End of Report ===\n")
 
-def set_seeds(seed=42):
+def set_seeds(seed=22):
     torch.manual_seed(seed)
     np.random.seed(seed)
     if torch.cuda.is_available():
@@ -250,7 +251,7 @@ def get_experiment_id(args):
 def main():
     parser = argparse.ArgumentParser(description='Run MD agreement experiments')
     parser.add_argument('--approaches', nargs='+', required=True,
-                      choices=['majority_vote', 'aart', 'aart_rince', 'multitask', 'annotator_embedding', 'annotator_embedding_rince'],
+                      choices=['majority_vote', 'aart', 'aart_rince', 'multitask', 'annotator_embedding', 'michembed_rince'],
                       help='Approaches to run')
     parser.add_argument('--use_weighted_embeddings', action='store_true',
                       help='Use weighted embeddings for annotator embedding model')
@@ -405,7 +406,16 @@ def print_final_summary(results):
     print(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     
     approaches = ['aart', 'multitask', 'annotator_embedding']
-    
+
+    def format_metric(value):
+        """Helper function to format metric values safely"""
+        if value == 'N/A' or value is None:
+            return 'N/A'
+        try:
+            return f"{float(value):.4f}"
+        except (ValueError, TypeError):
+            return str(value)
+
     for approach in approaches:
         print(f"\n=== {approach.upper()} ===")
         if approach in results and isinstance(results[approach], dict):
