@@ -41,6 +41,8 @@ from torch.utils.data import DataLoader
 from models.implementations.multitask import MultitaskModel
 from models.implementations.aart import AARTModel
 from models.implementations.aart_Rince_new import NewRinceModel
+from models.implementations.aart_ord_rince import NewRinceModel as OrdinalRinceModel
+from models.implementations.aart_likert import AARTRankingRobustModel
 from models.implementations.annotator_embedding import AnnotatorEmbeddingModel
 from models.implementations.majority_vote import MajorityVoteModel
 #sfrom models.implementations.annotator_embedding_rince import AnnotatorEmbeddingRinceModel
@@ -73,6 +75,20 @@ def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fix
         config.temperature = 0.07
         config.rince_lambda = 1.0
         config.rince_q = 1.0
+    elif approach == 'aart_ord_rince':
+        config.lambda2 = 0.1
+        config.contrastive_alpha = 0.1
+        config.temperature = 0.07
+        config.rince_lambda = 0.5
+        config.rince_q = 1.0
+    elif approach == 'aart_likert':
+        config.lambda2 = 0.1
+        config.temperature = 0.07
+        # Ranking robust parameters for uniform noise
+        config.q_values = [0.6, 0.65, 0.7, 0.75, 0.8]  # More uniform q values for uniform noise
+        config.tau_values = [0.1, 0.12, 0.14, 0.16, 0.18]  # More uniform tau values for uniform noise
+        config.rank_weights = [1.0, 1.0, 1.0, 1.0, 1.0]  # Equal weighting
+        config.learnable_ranking_params = False
     elif approach == 'multitask':
         pass
     elif approach == 'annotator_embedding':
@@ -118,6 +134,10 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
             trainer = Trainer(config, AARTModel)
         elif approach == 'aart_rince':
             trainer = Trainer(config, NewRinceModel)
+        elif approach == 'aart_ord_rince':
+            trainer = Trainer(config, OrdinalRinceModel)
+        elif approach == 'aart_likert':
+            trainer = Trainer(config, AARTRankingRobustModel)
         elif approach == 'multitask':
             trainer = Trainer(config, MultitaskModel)
         elif approach == 'annotator_embedding':
@@ -148,7 +168,7 @@ def write_final_comparison(results, output_path):
         f.write("=== Final Comparison of All Approaches ===\n")
         f.write(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
         
-        approaches = ['aart', 'aart_rince', 'multitask', 'annotator_embedding']
+        approaches = ['aart', 'aart_rince', 'aart_ord_rince', 'aart_likert', 'multitask', 'annotator_embedding']
         
         for approach in approaches:
             f.write(f"\n=== {approach.upper()} ===\n")
@@ -178,7 +198,7 @@ def write_final_comparison(results, output_path):
                 f.write(f"Max Annotator F1: {metrics.get('max_annotator_f1', 'N/A')}\n")
                 f.write(f"Number of Annotators Evaluated: {metrics.get('num_annotators_evaluated', 'N/A')}\n")
                 
-                # Individual annotator metrics if available
+                # Individual annotator metrics if available (write all to file for completeness)
                 if 'per_annotator_metrics' in metrics:
                     f.write("\nIndividual Annotator Metrics:\n")
                     for annotator_id, annotator_metrics in metrics['per_annotator_metrics'].items():
@@ -233,7 +253,7 @@ def get_experiment_id(args):
 def main():
     parser = argparse.ArgumentParser(description='Run sentiment agreement experiments')
     parser.add_argument('--approaches', nargs='+', required=True,
-                      choices=['majority_vote', 'aart', 'aart_rince', 'multitask', 'annotator_embedding'],
+                      choices=['majority_vote', 'aart', 'aart_rince', 'aart_ord_rince', 'aart_likert', 'multitask', 'annotator_embedding'],
                       help='Approaches to run')
     parser.add_argument('--add_noise', action='store_true',
                       help='Add noise to labels during training')
@@ -378,7 +398,7 @@ def print_final_summary(results):
     print("\n=== Final Results Summary ===")
     print(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     
-    approaches = ['aart', 'multitask', 'annotator_embedding']
+    approaches = ['aart', 'aart_rince', 'aart_ord_rince', 'aart_likert', 'multitask', 'annotator_embedding']
     
     for approach in approaches:
         print(f"\n=== {approach.upper()} ===")
@@ -408,14 +428,31 @@ def print_final_summary(results):
             print(f"Max Annotator F1: {metrics.get('max_annotator_f1', 'N/A'):.4f}")
             print(f"Number of Annotators Evaluated: {metrics.get('num_annotators_evaluated', 'N/A')}")
             
-            # Individual annotator metrics if available
+            # Individual annotator metrics if available (show only top 5 and bottom 5 for brevity)
             if 'per_annotator_metrics' in metrics:
-                print("\nIndividual Annotator Metrics:")
-                for annotator_id, annotator_metrics in metrics['per_annotator_metrics'].items():
-                    print(f"Annotator {annotator_id}:")
-                    print(f"  F1: {annotator_metrics.get('f1', 'N/A'):.4f}")
-                    print(f"  Accuracy: {annotator_metrics.get('accuracy', 'N/A'):.4f}")
-                    print(f"  Samples: {annotator_metrics.get('num_samples', 'N/A')}")
+                annotator_metrics_list = list(metrics['per_annotator_metrics'].items())
+                if len(annotator_metrics_list) > 10:
+                    # Sort by F1 score and show top 5 and bottom 5
+                    sorted_annotators = sorted(annotator_metrics_list, 
+                                             key=lambda x: x[1].get('f1', 0), reverse=True)
+                    print(f"\nIndividual Annotator Metrics (Top 5 and Bottom 5 of {len(annotator_metrics_list)}):")
+                    print("Top 5 Annotators:")
+                    for annotator_id, annotator_metrics in sorted_annotators[:5]:
+                        print(f"  Annotator {annotator_id}: F1={annotator_metrics.get('f1', 'N/A'):.4f}, "
+                              f"Acc={annotator_metrics.get('accuracy', 'N/A'):.4f}, "
+                              f"Samples={annotator_metrics.get('num_samples', 'N/A')}")
+                    print("Bottom 5 Annotators:")
+                    for annotator_id, annotator_metrics in sorted_annotators[-5:]:
+                        print(f"  Annotator {annotator_id}: F1={annotator_metrics.get('f1', 'N/A'):.4f}, "
+                              f"Acc={annotator_metrics.get('accuracy', 'N/A'):.4f}, "
+                              f"Samples={annotator_metrics.get('num_samples', 'N/A')}")
+                else:
+                    # Show all if 10 or fewer annotators
+                    print("\nIndividual Annotator Metrics:")
+                    for annotator_id, annotator_metrics in annotator_metrics_list:
+                        print(f"  Annotator {annotator_id}: F1={annotator_metrics.get('f1', 'N/A'):.4f}, "
+                              f"Acc={annotator_metrics.get('accuracy', 'N/A'):.4f}, "
+                              f"Samples={annotator_metrics.get('num_samples', 'N/A')}")
         else:
             print("No results available")
     

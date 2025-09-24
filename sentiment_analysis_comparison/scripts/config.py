@@ -6,10 +6,10 @@ from pathlib import Path
 @dataclass
 class ExperimentConfig:
     # Required arguments must come first
-    approach: str  # 'multitask', 'aart', 'annotator_embedding', 'majority_vote', or 'aart_rince'
+    approach: str  # 'multitask', 'aart', 'annotator_embedding', 'majority_vote', 'aart_rince', or 'aart_ord_rince'
     
     # Device configuration
-    device: torch.device = torch.device("cuda:0")
+    device: torch.device = torch.device("cuda:2")
     n_gpu: int = 1
     
     # Model parameters
@@ -17,7 +17,7 @@ class ExperimentConfig:
     max_length: int = 128
     batch_size: int = 32
     learning_rate: float = 1e-5
-    num_epochs: int = 1
+    num_epochs: int = 10
     seed: int = 42
     num_annotators: int = None  # Will be set during data setup
     
@@ -38,6 +38,12 @@ class ExperimentConfig:
     temperature: Optional[float] = None
     rince_lambda: Optional[float] = None
     rince_q: Optional[float] = None
+    
+    # AART Likert specific
+    q_values: Optional[list] = None
+    tau_values: Optional[list] = None
+    rank_weights: Optional[list] = None
+    learnable_ranking_params: bool = False
     
     # Noise configuration
     add_noise: bool = False
