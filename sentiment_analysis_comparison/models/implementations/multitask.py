@@ -39,6 +39,6 @@ class MultitaskModel(BaseModel):
         # Compute loss if labels are provided
         if self.training and label is not None:
             loss = self.criterion(logits, label)
-            return loss, logits
+            return loss
             
         return logits 

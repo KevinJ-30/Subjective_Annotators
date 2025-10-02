@@ -9,7 +9,7 @@ class ExperimentConfig:
     approach: str  # 'multitask', 'aart', 'annotator_embedding', 'majority_vote', 'aart_rince', or 'aart_ord_rince'
     
     # Device configuration
-    device: torch.device = torch.device("cuda:2")
+    device: torch.device = torch.device("cuda:1")
     n_gpu: int = 1
     
     # Model parameters
@@ -18,7 +18,7 @@ class ExperimentConfig:
     batch_size: int = 32
     learning_rate: float = 1e-5
     num_epochs: int = 10
-    seed: int = 42
+    seed: int =80
     num_annotators: int = None  # Will be set during data setup
     
     # Data paths
