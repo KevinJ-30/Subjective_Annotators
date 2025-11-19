@@ -33,6 +33,11 @@ class SubsamplingTrainer(Trainer):
         if noise_config is not None and noise_config.get('add_noise', False):
             from scripts.noise_utils import add_annotator_noise
             train_data = add_annotator_noise(train_data, noise_config)
+            # Disable noise in config for dataset since it's already applied
+            noise_config_for_dataset = noise_config.copy()
+            noise_config_for_dataset['add_noise'] = False
+        else:
+            noise_config_for_dataset = noise_config
         
         # Apply grouping if enabled
         if hasattr(self.config, 'use_grouping') and self.config.use_grouping:
@@ -44,18 +49,20 @@ class SubsamplingTrainer(Trainer):
             train_data = grouper.fit_transform(train_data)
         
         # Create dataset with the potentially grouped data
+        # Note: noise_config_for_dataset has add_noise=False if noise was already applied
         train_dataset = MDAgreementDataset(
             train_data,  # Pass the DataFrame directly
             self.tokenizer, 
             self.config.max_length,
             self.device,
-            noise_config=noise_config
+            noise_config=noise_config_for_dataset
         )
         
         # Update config with num_annotators
         self.config.num_annotators = train_dataset.num_annotators
-        # Use the custom batch sampler
-        batch_sampler = GroupByInstanceBatchSampler(train_dataset, max_batch_size=32, shuffle=True)
+        # Use the custom batch sampler with seed for deterministic shuffling
+        seed = getattr(self.config, 'seed', 42)
+        batch_sampler = GroupByInstanceBatchSampler(train_dataset, max_batch_size=32, shuffle=True, seed=seed)
         self.train_loader = DataLoader(train_dataset, batch_sampler=batch_sampler)
         # Print final dataset statistics
         print(f"Final dataset statistics:")

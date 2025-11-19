@@ -11,6 +11,7 @@ import traceback
 import numpy as np
 import pandas as pd
 import uuid
+import random
 
 # Create logs directory if it doesn't exist
 os.makedirs('logs', exist_ok=True)
@@ -123,6 +124,10 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
         if use_weighted_embeddings:
             config.use_weighted_embeddings = True
         
+        # Ensure seed is set in config (uses default from config if not specified)
+        if not hasattr(config, 'seed') or config.seed is None:
+            config.seed = 42
+        
         # Set data paths in config
         config.train_path = 'data/sentiment_analysis/processed/train.json'
         config.test_path = 'data/sentiment_analysis/processed/test.json'
@@ -212,10 +217,30 @@ def write_final_comparison(results, output_path):
         f.write("\n=== End of Report ===\n")
 
 def set_seeds(seed=42):
-    torch.manual_seed(seed)
+    """Set random seeds for reproducibility"""
+    # Python random
+    random.seed(seed)
+    
+    # NumPy
     np.random.seed(seed)
+    
+    # PyTorch
+    torch.manual_seed(seed)
+    
+    # CUDA
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+        torch.cuda.manual_seed(seed)
+    
+    # PyTorch deterministic operations
+    torch.use_deterministic_algorithms(True, warn_only=True)
+    
+    # CUDNN deterministic
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    
+    # Set environment variable for additional determinism
+    os.environ['PYTHONHASHSEED'] = str(seed)
 
 def get_experiment_id(args):
     """Generate a unique experiment ID based on parameters"""

@@ -18,7 +18,7 @@ class MultitaskModel(BaseModel):
         if config.n_gpu > 1:
             self.annotator_heads = nn.DataParallel(self.annotator_heads)
         
-    def forward(self, input_ids, attention_mask, annotator_id, label=None):
+    def forward(self, input_ids, attention_mask, annotator_id, label=None, text_id=None):
         outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
         pooled_output = outputs.pooler_output
         pooled_output = self.dropout(pooled_output)

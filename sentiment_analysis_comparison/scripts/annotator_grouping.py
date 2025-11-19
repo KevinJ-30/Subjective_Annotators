@@ -19,8 +19,8 @@ class AnnotatorGrouper:
         # Make a copy to avoid modifying original data
         data = data.copy()
         
-        # Get unique annotators
-        unique_annotators = data['annotator_id'].unique()
+        # Get unique annotators and sort to ensure deterministic order
+        unique_annotators = sorted(data['annotator_id'].unique())
         n_annotators = len(unique_annotators)
         
         # Calculate number of groups

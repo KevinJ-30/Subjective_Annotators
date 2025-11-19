@@ -14,7 +14,7 @@ class NewRinceModel(BaseModel):
 
         # Rince hyperparameters
         self.rince_lambda = getattr(config, "rince_lambda", 0.5)
-        self.rince_q = getattr(config, "rince_q", 1.0)
+        self.rince_q = getattr(config, "rince_q", 0.5)
 
         # Initialize weights with better values
         nn.init.normal_(self.annotator_embeddings.weight, mean=0.0, std=0.1)
@@ -26,7 +26,7 @@ class NewRinceModel(BaseModel):
         if config.n_gpu > 1:
             self.annotator_embeddings = nn.DataParallel(self.annotator_embeddings)
         
-    def compute_rince_loss(self, annotator_embeds, labels, text_ids, lam=0.5, q=1.0):
+    def compute_rince_loss(self, annotator_embeds, labels, text_ids, lam=0.5, q=0.5):
         """
         Fully vectorized and numerically stable RINCE loss using cosine similarity and log-domain.
         Args:

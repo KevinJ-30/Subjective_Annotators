@@ -1,4 +1,6 @@
 import torch
+import os
+import random
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, get_linear_schedule_with_warmup
 from pathlib import Path
@@ -12,6 +14,32 @@ from annotator_grouping import AnnotatorGrouper
 from scripts.data_loader import SentimentDataLoader
 from metrics import evaluate_model
 from group_by_instance_sampler import GroupByInstanceBatchSampler
+
+def set_seeds(seed=42):
+    """Set random seeds for reproducibility"""
+    # Python random
+    random.seed(seed)
+    
+    # NumPy
+    np.random.seed(seed)
+    
+    # PyTorch
+    torch.manual_seed(seed)
+    
+    # CUDA
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+        torch.cuda.manual_seed(seed)
+    
+    # PyTorch deterministic operations
+    torch.use_deterministic_algorithms(True, warn_only=True)
+    
+    # CUDNN deterministic
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    
+    # Set environment variable for additional determinism
+    os.environ['PYTHONHASHSEED'] = str(seed)
 
 class Trainer:
     def __init__(self, config, model_class):
@@ -48,6 +76,11 @@ class Trainer:
         if noise_config is not None and noise_config.get('add_noise', False):
             from scripts.noise_utils import add_annotator_noise
             train_data = add_annotator_noise(train_data, noise_config)
+            # Disable noise in config for dataset since it's already applied
+            noise_config_for_dataset = noise_config.copy()
+            noise_config_for_dataset['add_noise'] = False
+        else:
+            noise_config_for_dataset = noise_config
         
         # Apply grouping if enabled
         if hasattr(self.config, 'use_grouping') and self.config.use_grouping:
@@ -59,18 +92,20 @@ class Trainer:
             train_data = grouper.fit_transform(train_data)
         
         # Create dataset with the potentially grouped data
+        # Note: noise_config_for_dataset has add_noise=False if noise was already applied
         train_dataset = SentimentDataLoader(
             train_data,  # Pass the DataFrame directly
             self.tokenizer, 
             self.config.max_length,
             self.device,
-            noise_config=noise_config
+            noise_config=noise_config_for_dataset
         )
         
         # Update config with num_annotators
         self.config.num_annotators = train_dataset.num_annotators
-        # Use the custom batch sampler
-        batch_sampler = GroupByInstanceBatchSampler(train_dataset, max_batch_size=32, shuffle=True)
+        # Use the custom batch sampler with seed for deterministic shuffling
+        seed = getattr(self.config, 'seed', 42)
+        batch_sampler = GroupByInstanceBatchSampler(train_dataset, max_batch_size=32, shuffle=True, seed=seed)
         self.train_loader = DataLoader(train_dataset, batch_sampler=batch_sampler)
         # Print final dataset statistics
         print(f"Final dataset statistics:")
@@ -90,6 +125,10 @@ class Trainer:
         print("\n=== Setting up model ===")
         if not hasattr(self.config, 'num_annotators'):
             raise ValueError("Must call setup_data before setup_model to set num_annotators")
+        
+        # Re-seed before model initialization to ensure deterministic weight initialization
+        seed = getattr(self.config, 'seed', 42)
+        set_seeds(seed)
             
         self.model = self.model_class(self.config)
         self.model.to(self.device)
