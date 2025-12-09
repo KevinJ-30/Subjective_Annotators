@@ -90,9 +90,12 @@ def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fix
     elif approach == 'aart_likert':
         config.lambda2 = kwargs.get('lambda2', 0.1)
         config.temperature = kwargs.get('temperature', 0.07)
-        # Ranking robust parameters for uniform noise
-        config.q_values = [0.6, 0.65, 0.7, 0.75, 0.8]
+        # Ranking robust parameters - q values centered at 0.75 with 0.05 increments
+        config.q_values = [0.65, 0.7, 0.75, 0.8, 0.85]
         config.tau_values = [0.1, 0.12, 0.14, 0.16, 0.18]
+        # Lambda values per rank for RRINCE denominator term
+        # Higher lambda for higher ranks to emphasize separation of distant labels
+        config.lambda_values = kwargs.get('lambda_values', [0.5, 0.5, 0.5, 0.5, 0.5])
         config.rank_weights = [1.0, 1.0, 1.0, 1.0, 1.0]
         config.learnable_ranking_params = False
     elif approach == 'multitask':

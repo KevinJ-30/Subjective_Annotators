@@ -88,6 +88,8 @@ def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fix
         # Ranking robust parameters for uniform noise
         config.q_values = [0.6, 0.65, 0.7, 0.75, 0.8]  # More uniform q values for uniform noise
         config.tau_values = [0.1, 0.12, 0.14, 0.16, 0.18]  # More uniform tau values for uniform noise
+        # Lambda values per rank for RRINCE denominator term
+        config.lambda_values = [0.5, 0.5, 0.5, 0.5, 0.5]  # Equal lambda across ranks
         config.rank_weights = [1.0, 1.0, 1.0, 1.0, 1.0]  # Equal weighting
         config.learnable_ranking_params = False
     elif approach == 'multitask':

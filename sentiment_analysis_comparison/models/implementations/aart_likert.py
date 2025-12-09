@@ -23,14 +23,21 @@ class AARTRankingRobustModel(BaseModel):
         default_tau_values = [0.1, 0.12, 0.14, 0.16, 0.18][:self.num_classes]
         self.tau_values = getattr(config, "tau_values", default_tau_values)
         
-        # Optional: make q and tau learnable
+        # Per-rank lambda values for RRINCE denominator term
+        # Higher lambda for higher ranks (more distant labels) to emphasize separation
+        default_lambda_values = [0.5, 0.5, 0.5, 0.5, 0.5][:self.num_classes]
+        self.lambda_values = getattr(config, "lambda_values", default_lambda_values)
+        
+        # Optional: make q, tau, and lambda learnable
         self.learnable_params = getattr(config, "learnable_ranking_params", False)
         if self.learnable_params:
             self.q_params = nn.Parameter(torch.tensor(self.q_values))
             self.tau_params = nn.Parameter(torch.tensor(self.tau_values))
+            self.lambda_params = nn.Parameter(torch.tensor(self.lambda_values))
         else:
             self.register_buffer('q_params', torch.tensor(self.q_values))
             self.register_buffer('tau_params', torch.tensor(self.tau_values))
+            self.register_buffer('lambda_params', torch.tensor(self.lambda_values))
         
         # Rank weighting (optional - weight importance of each rank's loss)
         default_rank_weights = [1.0] * self.num_classes
@@ -86,9 +93,10 @@ class AARTRankingRobustModel(BaseModel):
         
         # Process each rank (distance level)
         for distance in range(self.num_classes):
-            # Get q and tau for this rank
+            # Get q, tau, and lambda for this rank
             q = self.q_params[distance] if distance < len(self.q_params) else self.q_params[-1]
             tau = self.tau_params[distance] if distance < len(self.tau_params) else self.tau_params[-1]
+            lambda_r = self.lambda_params[distance] if distance < len(self.lambda_params) else self.lambda_params[-1]
             rank_weight = self.rank_weights_buffer[distance] if distance < len(self.rank_weights_buffer) else 1.0
             
             # Masks for current rank
@@ -102,9 +110,9 @@ class AARTRankingRobustModel(BaseModel):
                 loss_components[f'rank_{distance}'] = 0.0
                 continue
             
-            # Compute loss for this rank using robust formulation
+            # Compute loss for this rank using robust formulation (RRINCE)
             rank_loss = self.compute_robust_infonce_for_rank(
-                sim_matrix, rank_mask, denom_mask, q, tau, device
+                sim_matrix, rank_mask, denom_mask, q, tau, lambda_r, device
             )
             
             # Weight the loss for this rank
@@ -118,69 +126,61 @@ class AARTRankingRobustModel(BaseModel):
         if hasattr(self, 'batch_count') and self.batch_count % 100 == 0:
             print(f"Ranking loss components: {loss_components}")
         
-        return total_loss / max(1, len([k for k in loss_components if loss_components[k] > 0]))
+        # Return total loss (no normalization - sum of weighted rank losses as per paper)
+        return total_loss
     
-    def compute_robust_infonce_for_rank(self, sim_matrix, numerator_mask, denominator_mask, q, tau, device):
+    def compute_robust_infonce_for_rank(self, sim_matrix, numerator_mask, denominator_mask, q, tau, lambda_r, device):
         """
-        Compute robust InfoNCE for a single rank.
+        RRINCE: Ranking Robust InfoNCE
+        
+        For each rank r, apply RINCE formula:
+        L_r = -(1/q)*sum(exp(q*s_pos/tau)) + (lambda_r/q)*(sum(exp(s_all/tau)))^q
+        
+        This preserves the robustness property of RINCE while enforcing ranking.
+        The negative first term encourages high similarity for positives (minimize loss = maximize similarity).
+        The positive second term with lambda_r penalizes all similarities in denominator.
         
         Args:
-            sim_matrix: [B, B] similarity matrix
+            sim_matrix: [B, B] similarity matrix (cosine similarities)
             numerator_mask: [B, B] mask for positive pairs at this rank
-            denominator_mask: [B, B] mask for all pairs in denominator
-            q: robustness parameter
-            tau: temperature parameter
+            denominator_mask: [B, B] mask for all pairs in denominator (current and higher ranks)
+            q: robustness parameter for this rank
+            tau: temperature parameter for this rank
+            lambda_r: lambda parameter for this rank (controls denominator term strength)
             device: torch device
             
         Returns:
             Scalar loss for this rank
         """
         B = sim_matrix.size(0)
-        
-        # Scale similarities by temperature
         scaled_sims = sim_matrix / tau
         
-        # For numerical stability
-        max_sim = 10.0 / tau  # Prevent overflow
-        scaled_sims = torch.clamp(scaled_sims, max=max_sim)
-        
-        # Compute loss for each anchor point
         losses = []
         
         for i in range(B):
-            # Get positive similarities for anchor i
             pos_mask_i = numerator_mask[i]
             if not pos_mask_i.any():
                 continue
-                
-            pos_sims = scaled_sims[i][pos_mask_i]  # [N_pos]
             
-            # Get all similarities in denominator for anchor i  
+            pos_sims = scaled_sims[i][pos_mask_i]
+            
             denom_mask_i = denominator_mask[i]
             if not denom_mask_i.any():
                 continue
-                
-            denom_sims = scaled_sims[i][denom_mask_i]  # [N_denom]
             
-            # Robust InfoNCE formulation
-            if q == 1.0:
-                # Standard InfoNCE when q=1
-                numerator = torch.logsumexp(pos_sims, dim=0)
-                denominator = torch.logsumexp(denom_sims, dim=0)
-                loss_i = -numerator + denominator
-            else:
-                # Robust version with q != 1
-                # Numerator: (sum(exp(pos_sims)))^q
-                pos_logsumexp = torch.logsumexp(pos_sims, dim=0)
-                numerator = q * pos_logsumexp
-                
-                # Denominator: (sum(exp(denom_sims)))^q
-                denom_logsumexp = torch.logsumexp(denom_sims, dim=0)
-                denominator = q * denom_logsumexp
-                
-                # Loss: -1/q * log(num/denom) = -1/q * (log_num - log_denom)
-                loss_i = (-numerator + denominator) / q
+            denom_sims = scaled_sims[i][denom_mask_i]
             
+            # First term: -(1/q) * sum(exp(q * s_pos/tau))
+            # Using logsumexp for numerical stability
+            q_pos_sims = torch.clamp(q * pos_sims, max=20.0)
+            first_term = -torch.exp(torch.logsumexp(q_pos_sims, dim=0)) / q
+            
+            # Second term: (lambda_r/q) * (sum(exp(s_all/tau)))^q
+            # Using logsumexp for numerical stability, then raise to power q
+            denom_logsumexp = torch.logsumexp(torch.clamp(denom_sims, max=20.0), dim=0)
+            second_term = (lambda_r / q) * torch.exp(q * denom_logsumexp)
+            
+            loss_i = first_term + second_term
             losses.append(loss_i)
         
         if len(losses) == 0:
@@ -239,6 +239,7 @@ class AARTRankingRobustModel(BaseModel):
             'num_classes': self.num_classes,
             'q_values': self.q_values,
             'tau_values': self.tau_values,
+            'lambda_values': self.lambda_values.tolist() if isinstance(self.lambda_values, torch.Tensor) else self.lambda_values,
             'rank_weights': self.rank_weights.tolist(),
             'learnable_params': self.learnable_params,
             'lambda2': self.lambda2
