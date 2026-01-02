@@ -62,6 +62,9 @@ class Trainer:
         """Setup data first to get num_annotators"""
         print("\n=== Setting up data ===")
         
+        # Load data first to get annotator IDs
+        train_data = pd.read_json(self.config.train_path, lines=True)
+        
         # Create noise config if noise is enabled
         noise_config = {
             'add_noise': self.config.add_noise,
@@ -69,8 +72,25 @@ class Trainer:
             'default_noise': float(self.config.noise_level) if hasattr(self.config, 'noise_level') else 0.2
         }
         
-        # Load data
-        train_data = pd.read_json(self.config.train_path, lines=True)
+        # For renegade strategy, create noise_levels mapping actual annotator IDs
+        if noise_config.get('add_noise', False) and noise_config.get('strategy') == 'renegade':
+            from scripts.noise_utils import create_noise_config
+            unique_annotators = sorted(train_data['annotator_id'].unique())
+            num_annotators = len(unique_annotators)
+            
+            # Create noise config with integer indices
+            renegade_percent = getattr(self.config, 'renegade_percent', 0.1)
+            renegade_flip_prob = getattr(self.config, 'renegade_flip_prob', 0.7)
+            noise_levels_int = create_noise_config(
+                num_annotators=num_annotators,
+                strategy='renegade',
+                renegade_percent=renegade_percent,
+                renegade_flip_prob=renegade_flip_prob
+            )
+            
+            # Map integer indices to actual annotator ID strings
+            noise_levels = {unique_annotators[i]: noise_levels_int[i] for i in range(num_annotators)}
+            noise_config['noise_levels'] = noise_levels
         
         # Apply noise BEFORE grouping
         if noise_config is not None and noise_config.get('add_noise', False):

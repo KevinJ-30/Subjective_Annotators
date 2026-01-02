@@ -62,20 +62,43 @@ class Trainer:
         """Setup data first to get num_annotators"""
         print("\n=== Setting up data ===")
         
+        # Load data first to get annotator IDs
+        train_data = pd.read_json(self.config.train_path, lines=True)
+        
         # Create noise config if noise is enabled
         noise_config = {
             'add_noise': self.config.add_noise,
             'strategy': self.config.noise_strategy,
-            'default_noise': float(self.config.noise_level) if hasattr(self.config, 'noise_level') else 0.2
+            'default_noise': float(self.config.noise_level) if hasattr(self.config, 'noise_level') else 0.2,
+            'num_classes': 5  # Sentiment analysis has 5 classes
         }
         
-        # Load data
-        train_data = pd.read_json(self.config.train_path, lines=True)
+        # For renegade strategy, create noise_levels mapping actual annotator IDs
+        if noise_config.get('add_noise', False) and noise_config.get('strategy') == 'renegade':
+            from scripts.noise_utils import create_noise_config
+            unique_annotators = sorted(train_data['annotator_id'].unique())
+            num_annotators = len(unique_annotators)
+            
+            # Create noise config with integer indices
+            renegade_percent = getattr(self.config, 'renegade_percent', 0.1)
+            renegade_flip_prob = getattr(self.config, 'renegade_flip_prob', 0.7)
+            noise_config_dict = create_noise_config(
+                num_annotators=num_annotators,
+                strategy='renegade',
+                renegade_percent=renegade_percent,
+                renegade_flip_prob=renegade_flip_prob,
+                num_classes=5
+            )
+            
+            # Map integer indices to actual annotator ID strings
+            noise_levels_int = noise_config_dict['noise_levels']
+            noise_levels = {unique_annotators[i]: noise_levels_int[i] for i in range(num_annotators)}
+            noise_config['noise_levels'] = noise_levels
         
         # Apply noise BEFORE grouping
         if noise_config is not None and noise_config.get('add_noise', False):
             from scripts.noise_utils import add_annotator_noise
-            train_data = add_annotator_noise(train_data, noise_config)
+            train_data = add_annotator_noise(train_data, noise_config, num_classes=5)
             # Disable noise in config for dataset since it's already applied
             noise_config_for_dataset = noise_config.copy()
             noise_config_for_dataset['add_noise'] = False

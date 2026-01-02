@@ -24,7 +24,7 @@ class MajorityVoteModel(BaseModel):
             
         return torch.tensor(majority_votes, device=self.device)
     
-    def forward(self, input_ids, attention_mask, annotator_id, label=None):
+    def forward(self, input_ids, attention_mask, annotator_id, label=None, text_id=None):
         if label is not None:
             # During training, just store the majority votes
             majority = self.compute_majority_vote(label, annotator_id)
