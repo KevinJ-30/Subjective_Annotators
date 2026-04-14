@@ -224,10 +224,17 @@ class Trainer:
         print("\n=== Evaluating model ===")
         test_metrics = self.evaluate_model(self.test_loader)
         
-        # Save metrics to file
+        # Save metrics to file with experiment metadata
         metrics_path = self.checkpoint_dir.parent / "metrics.json"
+        metrics_with_meta = {
+            'experiment_id': getattr(self.config, 'experiment_id', None),
+            'approach': self.config.approach,
+            'seed': getattr(self.config, 'seed', None),
+            'device': str(self.config.device),
+            **test_metrics
+        }
         with open(metrics_path, 'w') as f:
-            json.dump(test_metrics, f, indent=2)
+            json.dump(metrics_with_meta, f, indent=2)
         
         return test_metrics
 

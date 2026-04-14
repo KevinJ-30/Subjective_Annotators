@@ -81,7 +81,7 @@ def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fix
     
     return config
 
-def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=0.2, noise_strategy='fixed', renegade_percent=0.1, renegade_flip_prob=0.7, use_grouping=False, annotators_per_group=4, use_weighted_embeddings=False):
+def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=0.2, noise_strategy='fixed', renegade_percent=0.1, renegade_flip_prob=0.7, use_grouping=False, annotators_per_group=4, use_weighted_embeddings=False, num_epochs=None):
     """Run a single experiment with the specified approach"""
     try:
         # Create config
@@ -99,6 +99,10 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
         # Set weighted embeddings if requested
         if use_weighted_embeddings:
             config.use_weighted_embeddings = True
+        
+        # Override num_epochs if specified
+        if num_epochs is not None:
+            config.num_epochs = num_epochs
         
         # Ensure seed is set in config (uses default from config if not specified)
         if not hasattr(config, 'seed') or config.seed is None:
@@ -275,6 +279,8 @@ def main():
                       help='Use annotator grouping')
     parser.add_argument('--annotators_per_group', type=int, default=4,
                       help='Number of annotators per group (default: 4)')
+    parser.add_argument('--num_epochs', type=int, default=None,
+                      help='Number of training epochs (overrides config default)')
     parser.add_argument('--experiment_id', type=str,
                       help='Optional experiment ID (will be generated if not provided)')
     
@@ -348,7 +354,8 @@ def main():
                 renegade_flip_prob=args.renegade_flip_prob,
                 use_grouping=args.use_grouping,
                 annotators_per_group=args.annotators_per_group,
-                use_weighted_embeddings=args.use_weighted_embeddings
+                use_weighted_embeddings=args.use_weighted_embeddings,
+                num_epochs=args.num_epochs
             )
         except Exception as e:
             logging.error(f"Error running {approach}: {str(e)}")

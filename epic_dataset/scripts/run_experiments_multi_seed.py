@@ -38,7 +38,7 @@ sys.path.append(str(project_root))
 from scripts.config import ExperimentConfig
 from scripts.train import Trainer
 from scripts.metrics import evaluate_model
-from scripts.data_loader import SentimentDataLoader
+from scripts.data_loader import MDAgreementDataset
 from transformers import AutoTokenizer
 from torch.utils.data import DataLoader
 
@@ -46,10 +46,9 @@ from torch.utils.data import DataLoader
 from models.implementations.multitask import MultitaskModel
 from models.implementations.aart import AARTModel
 from models.implementations.aart_Rince_new import NewRinceModel
-from models.implementations.aart_ord_rince import NewRinceModel as OrdinalRinceModel
-from models.implementations.aart_likert import AARTRankingRobustModel
 from models.implementations.annotator_embedding import AnnotatorEmbeddingModel
 from models.implementations.majority_vote import MajorityVoteModel
+from models.implementations.annotator_embedding_rince import AnnotatorEmbeddingRinceModel
 
 def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fixed', 
                 renegade_percent=0.1, renegade_flip_prob=0.7, use_grouping=False, 
@@ -79,30 +78,20 @@ def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fix
         config.lambda2 = kwargs.get('lambda2', 0.1)
         config.contrastive_alpha = kwargs.get('contrastive_alpha', 0.1)
         config.temperature = kwargs.get('temperature', 0.07)
-        config.rince_lambda = kwargs.get('rince_lambda', 1.0)
-        config.rince_q = kwargs.get('rince_q', 1.0)
-    elif approach == 'aart_ord_rince':
-        config.lambda2 = kwargs.get('lambda2', 0.1)
-        config.contrastive_alpha = kwargs.get('contrastive_alpha', 0.1)
-        config.temperature = kwargs.get('temperature', 0.07)
         config.rince_lambda = kwargs.get('rince_lambda', 0.5)
-        config.rince_q = kwargs.get('rince_q', 1.0)
-    elif approach == 'aart_likert':
-        config.lambda2 = kwargs.get('lambda2', 0.1)
-        config.temperature = kwargs.get('temperature', 0.07)
-        # Ranking robust parameters - q values centered at 0.75 with 0.05 increments
-        config.q_values = [0.65, 0.7, 0.75, 0.8, 0.85]
-        config.tau_values = [0.1, 0.12, 0.14, 0.16, 0.18]
-        # Lambda values per rank for RRINCE denominator term
-        # Higher lambda for higher ranks to emphasize separation of distant labels
-        config.lambda_values = kwargs.get('lambda_values', [0.5, 0.5, 0.5, 0.5, 0.5])
-        config.rank_weights = [1.0, 1.0, 1.0, 1.0, 1.0]
-        config.learnable_ranking_params = False
+        config.rince_q = kwargs.get('rince_q', 0.5)
     elif approach == 'multitask':
         pass
     elif approach == 'annotator_embedding':
         config.use_annotator_embed = True
         config.use_annotation_embed = True
+    elif approach == 'annotator_embedding_rince':
+        config.use_annotator_embed = True
+        config.use_annotation_embed = True
+        config.lambda2 = kwargs.get('lambda2', 0.1)
+        config.temperature = kwargs.get('temperature', 0.07)
+        config.rince_lambda = kwargs.get('rince_lambda', 1.0)
+        config.rince_q = kwargs.get('rince_q', 1.0)
     
     return config
 
@@ -147,8 +136,8 @@ def run_single_experiment(approach, experiment_id, seed, run_number, add_noise=F
         config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         
         # Set data paths in config
-        config.train_path = 'data/sentiment_analysis/processed/train.json'
-        config.test_path = 'data/sentiment_analysis/processed/test.json'
+        config.train_path = 'data/epic_dataset/processed/train.json'
+        config.test_path = 'data/epic_dataset/processed/test.json'
         
         # Create trainer
         if approach == 'majority_vote':
@@ -157,14 +146,12 @@ def run_single_experiment(approach, experiment_id, seed, run_number, add_noise=F
             trainer = Trainer(config, AARTModel)
         elif approach == 'aart_rince':
             trainer = Trainer(config, NewRinceModel)
-        elif approach == 'aart_ord_rince':
-            trainer = Trainer(config, OrdinalRinceModel)
-        elif approach == 'aart_likert':
-            trainer = Trainer(config, AARTRankingRobustModel)
         elif approach == 'multitask':
             trainer = Trainer(config, MultitaskModel)
         elif approach == 'annotator_embedding':
             trainer = Trainer(config, AnnotatorEmbeddingModel)
+        elif approach == 'annotator_embedding_rince':
+            trainer = Trainer(config, AnnotatorEmbeddingRinceModel)
         else:
             raise ValueError(f"Unknown approach: {approach}")
         
@@ -223,7 +210,7 @@ def extract_key_metrics(results):
     }
     
     # Add per-class metrics if available
-    num_classes = results.get('num_classes', 5)
+    num_classes = results.get('num_classes', 2)
     for i in range(num_classes):
         key_metrics[f'class_{i}_f1'] = results.get(f'class_{i}_f1', None)
         key_metrics[f'class_{i}_precision'] = results.get(f'class_{i}_precision', None)
@@ -389,7 +376,7 @@ def get_experiment_id(args):
     name_parts = []
     
     # Add dataset name to make IDs unique across datasets
-    name_parts.append("sentiment_analysis")
+    name_parts.append("epic_dataset")
     
     # Add approaches
     approach_str = '_'.join(sorted(args.approaches))
@@ -428,12 +415,12 @@ def get_experiment_id(args):
     return experiment_id
 
 def main():
-    parser = argparse.ArgumentParser(description='Run sentiment analysis experiments with multiple seeds')
+    parser = argparse.ArgumentParser(description='Run EPIC dataset experiments with multiple seeds')
     
     # Core experiment parameters
     parser.add_argument('--approaches', nargs='+', required=True,
-                      choices=['majority_vote', 'aart', 'aart_rince', 'aart_ord_rince', 'aart_likert', 
-                              'multitask', 'annotator_embedding'],
+                      choices=['majority_vote', 'aart', 'aart_rince', 'multitask', 
+                              'annotator_embedding', 'annotator_embedding_rince'],
                       help='Approaches to run')
     parser.add_argument('--seeds', nargs='+', type=int, required=True,
                       help='List of seeds to run experiments on')
@@ -697,4 +684,3 @@ def print_final_summary(all_results):
 
 if __name__ == "__main__":
     main()
-
