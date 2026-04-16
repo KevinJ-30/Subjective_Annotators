@@ -44,7 +44,8 @@ class SentimentDataLoader(Dataset):
             self.grouper = None
         
         # Create annotator mapping AFTER any grouping has been applied
-        unique_annotators = self.data['annotator_id'].unique()
+        # Sort annotators to ensure deterministic mapping order across runs
+        unique_annotators = sorted(self.data['annotator_id'].unique())
         self.annotator2id = {ann: idx for idx, ann in enumerate(unique_annotators)}
         self._num_annotators = len(unique_annotators)
         

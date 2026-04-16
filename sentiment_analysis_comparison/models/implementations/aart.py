@@ -135,7 +135,7 @@ class AARTModel(BaseModel):
                 self.batch_count = 0
             
             if self.batch_count % 100 == 0:
-                print(f"\nBatch {self.batch_count} - Contrastive Loss: {contra_loss.item():.4f}")
+                print(f"Batch {self.batch_count} - Contrastive Loss: {contra_loss.item():.4f}")
                 if contra_loss.item() == 0.0:
                     print(f"  [DEBUG] Contrastive loss is zero. Possible reasons:")
                     print(f"    - No valid positive pairs in batch (count == 0)")

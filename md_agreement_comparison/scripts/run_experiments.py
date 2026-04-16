@@ -11,6 +11,7 @@ import traceback
 import numpy as np
 import pandas as pd
 import uuid
+import random
 
 # Create logs directory if it doesn't exist
 os.makedirs('logs', exist_ok=True)
@@ -71,8 +72,8 @@ def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fix
         config.lambda2 = 0.1
         config.contrastive_alpha = 0.1
         config.temperature = 0.07
-        config.rince_lambda = 1.0
-        config.rince_q = 1.0
+        config.rince_lambda = 0.5
+        config.rince_q = 0.5
     elif approach == 'multitask':
         pass
     elif approach == 'annotator_embedding':
@@ -88,7 +89,7 @@ def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fix
     
     return config
 
-def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=0.2, noise_strategy='fixed', renegade_percent=0.1, renegade_flip_prob=0.7, use_grouping=False, annotators_per_group=4, use_weighted_embeddings=False):
+def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=0.2, noise_strategy='fixed', renegade_percent=0.1, renegade_flip_prob=0.7, use_grouping=False, annotators_per_group=4, use_weighted_embeddings=False, num_epochs=None):
     """Run a single experiment with the specified approach"""
     try:
         if approach != 'aart_rince':  # Only log for non-aart_rince approaches
@@ -109,6 +110,14 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
         # Set weighted embeddings if requested
         if use_weighted_embeddings:
             config.use_weighted_embeddings = True
+        
+        # Override num_epochs if specified
+        if num_epochs is not None:
+            config.num_epochs = num_epochs
+        
+        # Ensure seed is set in config (uses default from config if not specified)
+        if not hasattr(config, 'seed') or config.seed is None:
+            config.seed = 42
             
         # Set experiment ID and directories
         config.experiment_id = experiment_id
@@ -205,10 +214,30 @@ def write_final_comparison(results, output_path):
         f.write("\n=== End of Report ===\n")
 
 def set_seeds(seed=42):
-    torch.manual_seed(seed)
+    """Set random seeds for reproducibility"""
+    # Python random
+    random.seed(seed)
+    
+    # NumPy
     np.random.seed(seed)
+    
+    # PyTorch
+    torch.manual_seed(seed)
+    
+    # CUDA
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+        torch.cuda.manual_seed(seed)
+    
+    # PyTorch deterministic operations
+    torch.use_deterministic_algorithms(True, warn_only=True)
+    
+    # CUDNN deterministic
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    
+    # Set environment variable for additional determinism
+    os.environ['PYTHONHASHSEED'] = str(seed)
 
 def get_experiment_id(args):
     """Generate a unique experiment ID based on parameters"""
@@ -269,6 +298,8 @@ def main():
                       help='Enable annotator grouping')
     parser.add_argument('--annotators_per_group', type=int, default=4,
                       help='Number of annotators per group when grouping is enabled')
+    parser.add_argument('--num_epochs', type=int, default=None,
+                      help='Number of training epochs (overrides config default)')
     parser.add_argument('--experiment_id', type=str, default=None,
                       help='Optional experiment ID to use (if not provided, a new one will be generated)')
     
@@ -341,7 +372,8 @@ def main():
                 renegade_flip_prob=args.renegade_flip_prob,
                 use_grouping=args.use_grouping,
                 annotators_per_group=args.annotators_per_group,
-                use_weighted_embeddings=args.use_weighted_embeddings
+                use_weighted_embeddings=args.use_weighted_embeddings,
+                num_epochs=args.num_epochs
             )
             print(f"\nDebug - Results for {approach}:")
             print(f"Results type: {type(results[approach])}")

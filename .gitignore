@@ -7,6 +7,7 @@
 wandb/
 outputs/
 **/experiments/
+**/multi_seed_experiments/
 
 # Keep .gitkeep files
 !.gitkeep
