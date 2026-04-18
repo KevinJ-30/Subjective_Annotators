@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import logging
+from scipy.stats import truncnorm
 
 def create_noise_config(num_annotators, strategy='fixed', custom_levels=None, base_noise=0.2, renegade_percent=0.1, renegade_flip_prob=0.7):
     """
@@ -42,10 +43,119 @@ def create_noise_config(num_annotators, strategy='fixed', custom_levels=None, ba
         for ann_id in range(num_annotators):
             noise_levels[ann_id] = np.random.uniform(0.1, 0.3)
             
+    elif strategy == 'instance_dependent':
+        noise_levels = {i: 0.0 for i in range(num_annotators)}
+
+    elif strategy == 'combined':
+        a, b = (0.0 - base_noise) / 0.1, (1.0 - base_noise) / 0.1
+        epsilons = truncnorm.rvs(a, b, loc=base_noise, scale=0.1, size=num_annotators)
+        noise_levels = {i: float(epsilons[i]) for i in range(num_annotators)}
+        logging.info(f"Combined strategy: sampled epsilon_j values — mean={np.mean(epsilons):.3f}, std={np.std(epsilons):.3f}")
+
     else:  # fixed strategy
         noise_levels = {i: base_noise for i in range(num_annotators)}
-    
+
     return noise_levels
+
+
+def compute_instance_difficulty(embeddings: np.ndarray, noise_rate: float, seed: int) -> np.ndarray:
+    """
+    Compute per-instance difficulty scores from RoBERTa [CLS] embeddings.
+
+    Samples a global confusion vector w ~ N(0, 0.5) with a fixed seed, then
+    computes d_i = sigmoid(e_i @ w) and normalizes so mean(d_i) = noise_rate.
+    """
+    rng = np.random.default_rng(seed)
+    w = rng.normal(0.0, 0.5, size=embeddings.shape[1])
+    d = 1.0 / (1.0 + np.exp(-embeddings @ w))
+    d_normalized = d * (noise_rate / d.mean())
+    return np.clip(d_normalized, 0.0, 1.0)
+
+
+def add_instance_dependent_noise(data: pd.DataFrame, noise_config: dict,
+                                  instance_difficulties: dict,
+                                  mode: str, gamma: float = 0.5):
+    """
+    Apply instance-dependent or combined noise to binary labels (0/1).
+
+    Returns (noisy_data, metadata).
+    """
+    noisy_data = data.copy()
+
+    if 'uid' in noisy_data.columns:
+        id_col = 'uid'
+    elif 'original_id' in noisy_data.columns:
+        id_col = 'original_id'
+    else:
+        raise ValueError("DataFrame must have a 'uid' or 'original_id' column for instance lookup")
+
+    noise_levels = noise_config.get('noise_levels', {})
+    default_noise = noise_config.get('default_noise', 0.2)
+
+    if mode == 'combined':
+        d_values = np.array(list(instance_difficulties.values()))
+        d_mean = d_values.mean() if len(d_values) > 0 else 1.0
+
+    flips_per_annotator = {}
+    flips_per_instance = {}
+    total_flipped = 0
+
+    for annotator in noisy_data['annotator_id'].unique():
+        mask = noisy_data['annotator_id'] == annotator
+        annotator_data = noisy_data[mask]
+        epsilon_j = noise_levels.get(annotator, default_noise)
+        num_flips = 0
+
+        for idx in annotator_data.index:
+            instance_id = noisy_data.at[idx, id_col]
+            d_i = instance_difficulties.get(instance_id, default_noise)
+
+            if mode == 'instance_dependent':
+                p_flip = d_i
+            else:
+                d_i_norm = d_i / d_mean if d_mean > 0 else d_i
+                p_flip = min(epsilon_j + (1.0 - epsilon_j) * gamma * d_i_norm, 1.0)
+
+            if np.random.random() < p_flip:
+                noisy_data.at[idx, 'answer_label'] = 1 - noisy_data.at[idx, 'answer_label']
+                num_flips += 1
+                total_flipped += 1
+                if instance_id not in flips_per_instance:
+                    flips_per_instance[instance_id] = {'flipped': 0, 'total': 0}
+                flips_per_instance[instance_id]['flipped'] += 1
+
+            if instance_id not in flips_per_instance:
+                flips_per_instance[instance_id] = {'flipped': 0, 'total': 0}
+            flips_per_instance[instance_id]['total'] += 1
+
+        flips_per_annotator[annotator] = {
+            'total_samples': len(annotator_data),
+            'flipped_samples': num_flips,
+            'flip_rate': num_flips / len(annotator_data) if len(annotator_data) > 0 else 0.0,
+            'epsilon_j': epsilon_j,
+        }
+
+    total_samples = len(noisy_data)
+    actual_flip_rate = total_flipped / total_samples if total_samples > 0 else 0.0
+
+    metadata = {
+        'mode': mode,
+        'actual_flip_rate': actual_flip_rate,
+        'target_flip_rate': default_noise,
+        'total_flipped': total_flipped,
+        'total_samples': total_samples,
+        'per_annotator': flips_per_annotator,
+        'per_instance': {str(k): v for k, v in flips_per_instance.items()},
+    }
+
+    logging.info(f"\nInstance-dependent noise ({mode}) statistics:")
+    logging.info(f"  Target flip rate: {default_noise:.3f}, Actual: {actual_flip_rate:.3f}")
+    logging.info(f"  Total flipped: {total_flipped}/{total_samples}")
+    for ann, stats in flips_per_annotator.items():
+        logging.info(f"  Annotator {ann}: {stats['flipped_samples']}/{stats['total_samples']} "
+                     f"({stats['flip_rate']*100:.2f}%) epsilon_j={stats['epsilon_j']:.3f}")
+
+    return noisy_data, metadata
 
 def add_annotator_noise(data, noise_config):
     """Add noise to annotator labels based on noise configuration"""

@@ -40,6 +40,9 @@ class ExperimentConfig:
     default_noise: float = 0.2  # default noise level for non-specified annotators
     renegade_percent: float = 0.1  # percentage of annotators to be renegades
     renegade_flip_prob: float = 0.7  # probability of flipping labels for renegade annotators
+    gamma: float = 0.5  # instance confusion scaling for combined noise strategy
+    confusion_seed: int = 42  # fixed seed for sampling the global confusion vector w
+    embeddings_path: Optional[str] = None  # path to precomputed RoBERTa [CLS] embeddings (.npy)
     
     # Add these new fields after existing ones
     use_weighted_embeddings: bool = False
