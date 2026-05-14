@@ -50,12 +50,13 @@ from models.implementations.annotator_embedding import AnnotatorEmbeddingModel
 from models.implementations.majority_vote import MajorityVoteModel
 from models.implementations.annotator_embedding_rince import AnnotatorEmbeddingRinceModel
 
-def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fixed', 
-                renegade_percent=0.1, renegade_flip_prob=0.7, use_grouping=False, 
-                annotators_per_group=4, **kwargs):
+def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fixed',
+                renegade_percent=0.1, renegade_flip_prob=0.7, use_grouping=False,
+                annotators_per_group=4, gamma=0.5, confusion_seed=42,
+                embeddings_path=None, **kwargs):
     """Setup configuration for a specific approach"""
     logging.info(f"Setting up configuration for {approach}")
-    
+
     # Create config with required approach parameter
     config = ExperimentConfig(
         approach=approach,
@@ -65,7 +66,10 @@ def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fix
         renegade_percent=renegade_percent,
         renegade_flip_prob=renegade_flip_prob,
         use_grouping=use_grouping,
-        annotators_per_group=annotators_per_group
+        annotators_per_group=annotators_per_group,
+        gamma=gamma,
+        confusion_seed=confusion_seed,
+        embeddings_path=embeddings_path,
     )
     
     # Set approach-specific parameters
@@ -95,10 +99,11 @@ def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fix
     
     return config
 
-def run_single_experiment(approach, experiment_id, seed, run_number, add_noise=False, 
-                         noise_level=0.2, noise_strategy='fixed', renegade_percent=0.1, 
-                         renegade_flip_prob=0.7, use_grouping=False, annotators_per_group=4, 
-                         use_weighted_embeddings=False, num_epochs=None, **hyperparams):
+def run_single_experiment(approach, experiment_id, seed, run_number, add_noise=False,
+                         noise_level=0.2, noise_strategy='fixed', renegade_percent=0.1,
+                         renegade_flip_prob=0.7, use_grouping=False, annotators_per_group=4,
+                         use_weighted_embeddings=False, num_epochs=None,
+                         gamma=0.5, confusion_seed=42, embeddings_path=None, **hyperparams):
     """Run a single experiment with the specified approach and seed"""
     try:
         logging.info(f"Starting experiment for {approach} (seed={seed}, run={run_number})")
@@ -108,14 +113,17 @@ def run_single_experiment(approach, experiment_id, seed, run_number, add_noise=F
         
         # Create config
         config = setup_config(
-            approach=approach, 
-            add_noise=add_noise, 
+            approach=approach,
+            add_noise=add_noise,
             noise_level=noise_level,
             noise_strategy=noise_strategy,
             renegade_percent=renegade_percent,
             renegade_flip_prob=renegade_flip_prob,
-            use_grouping=use_grouping, 
+            use_grouping=use_grouping,
             annotators_per_group=annotators_per_group,
+            gamma=gamma,
+            confusion_seed=confusion_seed,
+            embeddings_path=embeddings_path,
             **hyperparams
         )
         
@@ -397,6 +405,10 @@ def get_experiment_id(args):
     if args.add_noise:
         if args.noise_strategy == 'renegade':
             name_parts.append(f"renegade-{args.renegade_percent}-{args.renegade_flip_prob}")
+        elif args.noise_strategy == 'instance_dependent':
+            name_parts.append(f"instance_dep-{args.noise_level}")
+        elif args.noise_strategy == 'combined':
+            name_parts.append(f"combined-{args.noise_level}-g{args.gamma}")
         else:
             name_parts.append(f"noise-{args.noise_level}")
     
@@ -433,8 +445,15 @@ def main():
     parser.add_argument('--noise_level', type=float, default=0.2,
                       help='Level of noise to add to labels (default: 0.2)')
     parser.add_argument('--noise_strategy', type=str, default='fixed',
-                      choices=['fixed', 'random', 'custom', 'renegade'],
+                      choices=['fixed', 'random', 'custom', 'renegade',
+                               'instance_dependent', 'combined'],
                       help='Strategy for adding noise (default: fixed)')
+    parser.add_argument('--gamma', type=float, default=0.5,
+                      help='Instance confusion scaling for combined strategy (default: 0.5)')
+    parser.add_argument('--confusion_seed', type=int, default=42,
+                      help='Fixed seed for global confusion vector w (default: 42)')
+    parser.add_argument('--embeddings_path', type=str, default=None,
+                      help='Path to precomputed RoBERTa [CLS] embeddings .npy file')
     parser.add_argument('--renegade_percent', type=float, default=0.1,
                       help='Percentage of annotators to be renegades (default: 0.1)')
     parser.add_argument('--renegade_flip_prob', type=float, default=0.7,
@@ -592,6 +611,9 @@ def main():
                         annotators_per_group=args.annotators_per_group,
                         use_weighted_embeddings=args.use_weighted_embeddings,
                         num_epochs=args.num_epochs,
+                        gamma=args.gamma,
+                        confusion_seed=args.confusion_seed,
+                        embeddings_path=args.embeddings_path,
                         **hyperparams
                     )
                     

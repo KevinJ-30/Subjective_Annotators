@@ -77,7 +77,7 @@ class Trainer:
             from scripts.noise_utils import create_noise_config
             unique_annotators = sorted(train_data['annotator_id'].unique())
             num_annotators = len(unique_annotators)
-            
+
             # Create noise config with integer indices
             renegade_percent = getattr(self.config, 'renegade_percent', 0.1)
             renegade_flip_prob = getattr(self.config, 'renegade_flip_prob', 0.7)
@@ -87,13 +87,55 @@ class Trainer:
                 renegade_percent=renegade_percent,
                 renegade_flip_prob=renegade_flip_prob
             )
-            
+
             # Map integer indices to actual annotator ID strings
             noise_levels = {unique_annotators[i]: noise_levels_int[i] for i in range(num_annotators)}
             noise_config['noise_levels'] = noise_levels
-        
+
         # Apply noise BEFORE grouping
-        if noise_config is not None and noise_config.get('add_noise', False):
+        if noise_config.get('add_noise', False) and noise_config.get('strategy') in ('instance_dependent', 'combined'):
+            import numpy as np
+            from scripts.noise_utils import create_noise_config, compute_instance_difficulty, add_instance_dependent_noise
+
+            embeddings_path = getattr(self.config, 'embeddings_path', None)
+            if embeddings_path is None:
+                raise ValueError("embeddings_path must be set in config for instance_dependent/combined strategies")
+
+            # Load precomputed RoBERTa embeddings and instance IDs
+            embeddings = np.load(embeddings_path)
+            instance_ids_path = embeddings_path.replace('.npy', '_ids.npy')
+            instance_ids = np.load(instance_ids_path, allow_pickle=True)
+
+            # Compute per-instance difficulty scores (fixed confusion vector via confusion_seed)
+            confusion_seed = getattr(self.config, 'confusion_seed', 42)
+            default_noise = noise_config['default_noise']
+            difficulties_arr = compute_instance_difficulty(embeddings, noise_rate=default_noise, seed=confusion_seed)
+            instance_difficulties = {iid: float(d) for iid, d in zip(instance_ids, difficulties_arr)}
+
+            # For combined strategy, sample per-annotator epsilon_j values
+            if noise_config['strategy'] == 'combined':
+                unique_annotators = sorted(train_data['annotator_id'].unique())
+                num_annotators = len(unique_annotators)
+                noise_levels_int = create_noise_config(
+                    num_annotators=num_annotators,
+                    strategy='combined',
+                    base_noise=default_noise
+                )
+                noise_config['noise_levels'] = {unique_annotators[i]: noise_levels_int[i]
+                                                for i in range(num_annotators)}
+
+            gamma = getattr(self.config, 'gamma', 0.5)
+            train_data, _ = add_instance_dependent_noise(
+                train_data,
+                noise_config=noise_config,
+                instance_difficulties=instance_difficulties,
+                mode=noise_config['strategy'],
+                gamma=gamma,
+            )
+            noise_config_for_dataset = noise_config.copy()
+            noise_config_for_dataset['add_noise'] = False
+
+        elif noise_config is not None and noise_config.get('add_noise', False):
             from scripts.noise_utils import add_annotator_noise
             train_data = add_annotator_noise(train_data, noise_config)
             # Disable noise in config for dataset since it's already applied
