@@ -11,7 +11,7 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 import json
 import pandas as pd
 from annotator_grouping import AnnotatorGrouper
-from data_loader import HSBDataset
+from data_loader import MDAgreementDataset
 from metrics import evaluate_model
 from group_by_instance_sampler import GroupByInstanceBatchSampler
 
@@ -101,18 +101,15 @@ class Trainer:
             if embeddings_path is None:
                 raise ValueError("embeddings_path must be set in config for instance_dependent/combined strategies")
 
-            # Load precomputed RoBERTa embeddings and instance IDs
             embeddings = np.load(embeddings_path)
             instance_ids_path = embeddings_path.replace('.npy', '_ids.npy')
             instance_ids = np.load(instance_ids_path, allow_pickle=True)
 
-            # Compute per-instance difficulty scores (fixed confusion vector via confusion_seed)
             confusion_seed = getattr(self.config, 'confusion_seed', 42)
             default_noise = noise_config['default_noise']
             difficulties_arr = compute_instance_difficulty(embeddings, noise_rate=default_noise, seed=confusion_seed)
             instance_difficulties = {iid: float(d) for iid, d in zip(instance_ids, difficulties_arr)}
 
-            # For combined strategy, sample per-annotator epsilon_j values
             if noise_config['strategy'] == 'combined':
                 unique_annotators = sorted(train_data['annotator_id'].unique())
                 num_annotators = len(unique_annotators)
@@ -155,7 +152,7 @@ class Trainer:
         
         # Create dataset with the potentially grouped data
         # Note: noise_config_for_dataset has add_noise=False if noise was already applied
-        train_dataset = HSBDataset(
+        train_dataset = MDAgreementDataset(
             train_data,  # Pass the DataFrame directly
             self.tokenizer, 
             self.config.max_length,
@@ -202,7 +199,7 @@ class Trainer:
         self.setup_model()
         
         # Create test dataset and loader
-        test_dataset = HSBDataset(
+        test_dataset = MDAgreementDataset(
             self.config.test_path,
             self.tokenizer, 
             self.config.max_length,

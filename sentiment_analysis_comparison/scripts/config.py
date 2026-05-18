@@ -9,7 +9,7 @@ class ExperimentConfig:
     approach: str  # 'multitask', 'aart', 'annotator_embedding', 'majority_vote', 'aart_rince', or 'aart_ord_rince'
     
     # Device configuration
-    device: torch.device = torch.device("cuda:1")
+    device: torch.device = torch.device("cuda:0")
     n_gpu: int = 1
     
     # Model parameters

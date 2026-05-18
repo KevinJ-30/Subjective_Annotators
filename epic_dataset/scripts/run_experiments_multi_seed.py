@@ -56,7 +56,7 @@ def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fix
                 embeddings_path=None, **kwargs):
     """Setup configuration for a specific approach"""
     logging.info(f"Setting up configuration for {approach}")
-
+    
     # Create config with required approach parameter
     config = ExperimentConfig(
         approach=approach,
@@ -144,8 +144,8 @@ def run_single_experiment(approach, experiment_id, seed, run_number, add_noise=F
         config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         
         # Set data paths in config
-        config.train_path = 'data/md_agreement/processed/train.json'
-        config.test_path = 'data/md_agreement/processed/test.json'
+        config.train_path = 'data/epic_dataset/processed/train.json'
+        config.test_path = 'data/epic_dataset/processed/test.json'
         
         # Create trainer
         if approach == 'majority_vote':
@@ -384,7 +384,7 @@ def get_experiment_id(args):
     name_parts = []
     
     # Add dataset name to make IDs unique across datasets
-    name_parts.append("md_agreement")
+    name_parts.append("epic_dataset")
     
     # Add approaches
     approach_str = '_'.join(sorted(args.approaches))
@@ -427,7 +427,7 @@ def get_experiment_id(args):
     return experiment_id
 
 def main():
-    parser = argparse.ArgumentParser(description='Run MD agreement experiments with multiple seeds')
+    parser = argparse.ArgumentParser(description='Run EPIC dataset experiments with multiple seeds')
     
     # Core experiment parameters
     parser.add_argument('--approaches', nargs='+', required=True,

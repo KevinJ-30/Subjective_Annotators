@@ -16,13 +16,13 @@ class ExperimentConfig:
     max_length: int = 128
     batch_size: int = 32
     learning_rate: float = 1e-5
-    num_epochs: int = 10
+    num_epochs: int = 1
     seed: int = 42
     num_annotators: int = None  # Will be set during data setup
     
     # Data paths
-    train_path: str = "data/hsb_brexit/processed/train.json"
-    test_path: str = "data/hsb_brexit/processed/test.json"
+    train_path: str = "data/epic_dataset/processed/train.json"
+    test_path: str = "data/epic_dataset/processed/test.json"
     
     # Model specific
     use_annotator_embed: bool = False
@@ -34,7 +34,7 @@ class ExperimentConfig:
     
     # Noise configuration
     add_noise: bool = False
-    noise_level: float = 0.2
+    noise_level: float = 0.2  # Default noise level
     noise_strategy: str = 'fixed'  # 'fixed', 'random', 'custom', or 'renegade'
     noise_levels: Optional[dict] = None
     default_noise: float = 0.2  # default noise level for non-specified annotators
@@ -48,12 +48,20 @@ class ExperimentConfig:
     use_weighted_embeddings: bool = False
     add_to_cls_only: bool = True
     
-    # Add new fields for grouping
-    use_grouping: bool = False
-    annotators_per_group: int = 4
-    group_min_agreement: float = 0.6
+    # Annotator grouping configuration
+    use_grouping: bool = False  # Whether to use annotator grouping
+    annotators_per_group: int = 4  # Number of annotators per group
     
     def __post_init__(self):
         print(f"Using device: {self.device}")
         if self.n_gpu > 0:
             print(f"Number of GPUs available: {self.n_gpu}")
+        if self.use_grouping:
+            print(f"Using annotator grouping with {self.annotators_per_group} annotators per group")
+        if self.add_noise:
+            print(f"Adding noise with strategy: {self.noise_strategy}")
+            if self.noise_strategy == 'renegade':
+                print(f"  Renegade percentage: {self.renegade_percent*100}%")
+                print(f"  Renegade flip probability: {self.renegade_flip_prob*100}%")
+            else:
+                print(f"  Noise level: {self.noise_level}")

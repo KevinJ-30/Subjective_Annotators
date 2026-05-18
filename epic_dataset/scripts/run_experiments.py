@@ -34,7 +34,7 @@ sys.path.append(str(project_root))
 from scripts.config import ExperimentConfig
 from scripts.train import Trainer
 from scripts.metrics import evaluate_model
-from scripts.data_loader import SentimentDataLoader
+from scripts.data_loader import MDAgreementDataset
 from transformers import AutoTokenizer
 from torch.utils.data import DataLoader
 
@@ -42,11 +42,9 @@ from torch.utils.data import DataLoader
 from models.implementations.multitask import MultitaskModel
 from models.implementations.aart import AARTModel
 from models.implementations.aart_Rince_new import NewRinceModel
-from models.implementations.aart_ord_rince import NewRinceModel as OrdinalRinceModel
-from models.implementations.aart_likert import AARTRankingRobustModel
 from models.implementations.annotator_embedding import AnnotatorEmbeddingModel
 from models.implementations.majority_vote import MajorityVoteModel
-#sfrom models.implementations.annotator_embedding_rince import AnnotatorEmbeddingRinceModel
+from models.implementations.annotator_embedding_rince import AnnotatorEmbeddingRinceModel
 
 def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fixed', renegade_percent=0.1, renegade_flip_prob=0.7, use_grouping=False, annotators_per_group=4):
     """Setup configuration for a specific approach"""
@@ -74,36 +72,28 @@ def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fix
         config.lambda2 = 0.1
         config.contrastive_alpha = 0.1
         config.temperature = 0.07
-        config.rince_lambda = 1.0
-        config.rince_q = 1.0
-    elif approach == 'aart_ord_rince':
-        config.lambda2 = 0.1
-        config.contrastive_alpha = 0.1
-        config.temperature = 0.07
         config.rince_lambda = 0.5
-        config.rince_q = 1.0
-    elif approach == 'aart_likert':
-        config.lambda2 = 0.1
-        config.temperature = 0.07
-        # Ranking robust parameters for uniform noise
-        config.q_values = [0.6, 0.65, 0.7, 0.75, 0.8]  # More uniform q values for uniform noise
-        config.tau_values = [0.1, 0.12, 0.14, 0.16, 0.18]  # More uniform tau values for uniform noise
-        # Lambda values per rank for RRINCE denominator term
-        config.lambda_values = [0.5, 0.5, 0.5, 0.5, 0.5]  # Equal lambda across ranks
-        config.rank_weights = [1.0, 1.0, 1.0, 1.0, 1.0]  # Equal weighting
-        config.learnable_ranking_params = False
+        config.rince_q = 0.5
     elif approach == 'multitask':
         pass
     elif approach == 'annotator_embedding':
         config.use_annotator_embed = True
         config.use_annotation_embed = True
+    elif approach == 'annotator_embedding_rince':
+        config.use_annotator_embed = True
+        config.use_annotation_embed = True
+        config.lambda2 = 0.1
+        config.temperature = 0.07
+        config.rince_lambda = 1.0
+        config.rince_q = 1.0
     
     return config
 
 def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=0.2, noise_strategy='fixed', renegade_percent=0.1, renegade_flip_prob=0.7, use_grouping=False, annotators_per_group=4, use_weighted_embeddings=False, num_epochs=None):
     """Run a single experiment with the specified approach"""
     try:
-        logging.info(f"\nStarting experiment for {approach}")
+        if approach != 'aart_rince':  # Only log for non-aart_rince approaches
+            logging.info(f"\nStarting experiment for {approach}")
         
         # Create config
         config = setup_config(
@@ -117,11 +107,6 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
             annotators_per_group=annotators_per_group
         )
         
-        # Set experiment ID and directories
-        config.experiment_id = experiment_id
-        config.checkpoint_dir = Path(f"experiments/{experiment_id}/models/checkpoints/{approach}")
-        config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        
         # Set weighted embeddings if requested
         if use_weighted_embeddings:
             config.use_weighted_embeddings = True
@@ -133,10 +118,15 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
         # Ensure seed is set in config (uses default from config if not specified)
         if not hasattr(config, 'seed') or config.seed is None:
             config.seed = 42
+            
+        # Set experiment ID and directories
+        config.experiment_id = experiment_id
+        config.checkpoint_dir = Path(f"experiments/{experiment_id}/models/checkpoints/{approach}")
+        config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         
         # Set data paths in config
-        config.train_path = 'data/sentiment_analysis/processed/train.json'
-        config.test_path = 'data/sentiment_analysis/processed/test.json'
+        config.train_path = 'data/epic_dataset/processed/train.json'
+        config.test_path = 'data/epic_dataset/processed/test.json'
         
         # Create trainer
         if approach == 'majority_vote':
@@ -145,25 +135,26 @@ def run_single_experiment(approach, experiment_id, add_noise=False, noise_level=
             trainer = Trainer(config, AARTModel)
         elif approach == 'aart_rince':
             trainer = Trainer(config, NewRinceModel)
-        elif approach == 'aart_ord_rince':
-            trainer = Trainer(config, OrdinalRinceModel)
-        elif approach == 'aart_likert':
-            trainer = Trainer(config, AARTRankingRobustModel)
         elif approach == 'multitask':
             trainer = Trainer(config, MultitaskModel)
         elif approach == 'annotator_embedding':
             trainer = Trainer(config, AnnotatorEmbeddingModel)
+        elif approach == 'annotator_embedding_rince':
+            trainer = Trainer(config, AnnotatorEmbeddingRinceModel)
         else:
             raise ValueError(f"Unknown approach: {approach}")
         
         # Train and evaluate
         results = trainer.train()
-        logging.info(f"Training completed for {approach}")
+        
+        if approach != 'aart_rince':  # Only log for non-aart_rince approaches
+            logging.info(f"Training completed for {approach}")
         
         # After training and evaluation
         metrics = trainer.evaluate_model(trainer.test_loader)
-        logging.info(f"\nEvaluation metrics for {approach}:")
-        logging.info(f"Metrics: {metrics}")
+        print(f"\nDebug - Raw metrics from evaluation:")
+        print(f"Metrics type: {type(metrics)}")
+        print(f"Metrics content: {metrics}")
         
         return results
     except Exception as e:
@@ -179,7 +170,7 @@ def write_final_comparison(results, output_path):
         f.write("=== Final Comparison of All Approaches ===\n")
         f.write(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
         
-        approaches = ['aart', 'aart_rince', 'aart_ord_rince', 'aart_likert', 'multitask', 'annotator_embedding']
+        approaches = ['aart', 'aart_rince', 'multitask', 'annotator_embedding']
         
         for approach in approaches:
             f.write(f"\n=== {approach.upper()} ===\n")
@@ -209,7 +200,7 @@ def write_final_comparison(results, output_path):
                 f.write(f"Max Annotator F1: {metrics.get('max_annotator_f1', 'N/A')}\n")
                 f.write(f"Number of Annotators Evaluated: {metrics.get('num_annotators_evaluated', 'N/A')}\n")
                 
-                # Individual annotator metrics if available (write all to file for completeness)
+                # Individual annotator metrics if available
                 if 'per_annotator_metrics' in metrics:
                     f.write("\nIndividual Annotator Metrics:\n")
                     for annotator_id, annotator_metrics in metrics['per_annotator_metrics'].items():
@@ -271,6 +262,10 @@ def get_experiment_id(args):
         else:
             name_parts.append(f"noise-{args.noise_level}")
     
+    # Add weighted embeddings info if enabled
+    if args.use_weighted_embeddings:
+        name_parts.append("weighted")
+    
     # Add timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     name_parts.append(timestamp)
@@ -282,10 +277,12 @@ def get_experiment_id(args):
     return experiment_id
 
 def main():
-    parser = argparse.ArgumentParser(description='Run sentiment agreement experiments')
+    parser = argparse.ArgumentParser(description='Run EPIC dataset experiments')
     parser.add_argument('--approaches', nargs='+', required=True,
-                      choices=['majority_vote', 'aart', 'aart_rince', 'aart_ord_rince', 'aart_likert', 'multitask', 'annotator_embedding'],
+                      choices=['majority_vote', 'aart', 'aart_rince', 'multitask', 'annotator_embedding', 'annotator_embedding_rince'],
                       help='Approaches to run')
+    parser.add_argument('--use_weighted_embeddings', action='store_true',
+                      help='Use weighted embeddings for annotator embedding model')
     parser.add_argument('--add_noise', action='store_true',
                       help='Add noise to labels during training')
     parser.add_argument('--noise_level', type=float, default=0.2,
@@ -301,8 +298,6 @@ def main():
                       help='Enable annotator grouping')
     parser.add_argument('--annotators_per_group', type=int, default=4,
                       help='Number of annotators per group when grouping is enabled')
-    parser.add_argument('--use_weighted_embeddings', action='store_true',
-                      help='Use weighted embeddings for annotator embedding model')
     parser.add_argument('--num_epochs', type=int, default=None,
                       help='Number of training epochs (overrides config default)')
     parser.add_argument('--experiment_id', type=str, default=None,
@@ -347,6 +342,7 @@ def main():
         config = {
             'experiment_id': experiment_id,
             'approaches': args.approaches,
+            'use_weighted_embeddings': args.use_weighted_embeddings,
             'add_noise': args.add_noise,
             'noise_level': args.noise_level,
             'noise_strategy': args.noise_strategy,
@@ -354,7 +350,6 @@ def main():
             'renegade_flip_prob': args.renegade_flip_prob,
             'use_grouping': args.use_grouping,
             'annotators_per_group': args.annotators_per_group,
-            'use_weighted_embeddings': args.use_weighted_embeddings,
             'timestamp': datetime.now().isoformat()
         }
         json.dump(config, f, indent=2)
@@ -366,6 +361,7 @@ def main():
     results = {}
     for approach in args.approaches:
         try:
+            print(f"\nDebug - Running {approach}")
             results[approach] = run_single_experiment(
                 approach, 
                 experiment_id=experiment_id,
@@ -379,18 +375,26 @@ def main():
                 use_weighted_embeddings=args.use_weighted_embeddings,
                 num_epochs=args.num_epochs
             )
+            print(f"\nDebug - Results for {approach}:")
+            print(f"Results type: {type(results[approach])}")
+            print(f"Results content: {results[approach]}")
         except Exception as e:
-            logging.error(f"Error running {approach}: {str(e)}")
+            print(f"\nError running {approach}:")
+            print(f"Error type: {type(e)}")
+            print(f"Error message: {str(e)}")
             traceback.print_exc()
             results[approach] = {"error": str(e)}
     
     try:
         # Write final comparison to experiment-specific directory
         comparison_path = results_dir / "final_comparison.txt"
+        print(f"\nDebug - Writing comparison to {comparison_path}")
         write_final_comparison(results, comparison_path)
         
         # Save raw results
         raw_results_path = results_dir / "raw_results.json"
+        print(f"\nDebug - Writing raw results to {raw_results_path}")
+        print(f"Raw results content: {results}")
         with open(raw_results_path, 'w') as f:
             json.dump(results, f, indent=2)
         
@@ -432,7 +436,7 @@ def print_final_summary(results):
     print("\n=== Final Results Summary ===")
     print(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     
-    approaches = ['aart', 'aart_rince', 'aart_ord_rince', 'aart_likert', 'multitask', 'annotator_embedding']
+    approaches = ['aart', 'multitask', 'annotator_embedding']
     
     for approach in approaches:
         print(f"\n=== {approach.upper()} ===")
@@ -462,31 +466,14 @@ def print_final_summary(results):
             print(f"Max Annotator F1: {metrics.get('max_annotator_f1', 'N/A'):.4f}")
             print(f"Number of Annotators Evaluated: {metrics.get('num_annotators_evaluated', 'N/A')}")
             
-            # Individual annotator metrics if available (show only top 5 and bottom 5 for brevity)
+            # Individual annotator metrics if available
             if 'per_annotator_metrics' in metrics:
-                annotator_metrics_list = list(metrics['per_annotator_metrics'].items())
-                if len(annotator_metrics_list) > 10:
-                    # Sort by F1 score and show top 5 and bottom 5
-                    sorted_annotators = sorted(annotator_metrics_list, 
-                                             key=lambda x: x[1].get('f1', 0), reverse=True)
-                    print(f"\nIndividual Annotator Metrics (Top 5 and Bottom 5 of {len(annotator_metrics_list)}):")
-                    print("Top 5 Annotators:")
-                    for annotator_id, annotator_metrics in sorted_annotators[:5]:
-                        print(f"  Annotator {annotator_id}: F1={annotator_metrics.get('f1', 'N/A'):.4f}, "
-                              f"Acc={annotator_metrics.get('accuracy', 'N/A'):.4f}, "
-                              f"Samples={annotator_metrics.get('num_samples', 'N/A')}")
-                    print("Bottom 5 Annotators:")
-                    for annotator_id, annotator_metrics in sorted_annotators[-5:]:
-                        print(f"  Annotator {annotator_id}: F1={annotator_metrics.get('f1', 'N/A'):.4f}, "
-                              f"Acc={annotator_metrics.get('accuracy', 'N/A'):.4f}, "
-                              f"Samples={annotator_metrics.get('num_samples', 'N/A')}")
-                else:
-                    # Show all if 10 or fewer annotators
-                    print("\nIndividual Annotator Metrics:")
-                    for annotator_id, annotator_metrics in annotator_metrics_list:
-                        print(f"  Annotator {annotator_id}: F1={annotator_metrics.get('f1', 'N/A'):.4f}, "
-                              f"Acc={annotator_metrics.get('accuracy', 'N/A'):.4f}, "
-                              f"Samples={annotator_metrics.get('num_samples', 'N/A')}")
+                print("\nIndividual Annotator Metrics:")
+                for annotator_id, annotator_metrics in metrics['per_annotator_metrics'].items():
+                    print(f"Annotator {annotator_id}:")
+                    print(f"  F1: {annotator_metrics.get('f1', 'N/A'):.4f}")
+                    print(f"  Accuracy: {annotator_metrics.get('accuracy', 'N/A'):.4f}")
+                    print(f"  Samples: {annotator_metrics.get('num_samples', 'N/A')}")
         else:
             print("No results available")
     

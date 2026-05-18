@@ -109,7 +109,7 @@ def setup_config(approach, add_noise=False, noise_level=0.2, noise_strategy='fix
 def run_single_experiment(approach, experiment_id, seed, run_number, add_noise=False, 
                          noise_level=0.2, noise_strategy='fixed', renegade_percent=0.1, 
                          renegade_flip_prob=0.7, use_grouping=False, annotators_per_group=4, 
-                         use_weighted_embeddings=False, **hyperparams):
+                         use_weighted_embeddings=False, num_epochs=None, **hyperparams):
     """Run a single experiment with the specified approach and seed"""
     try:
         logging.info(f"Starting experiment for {approach} (seed={seed}, run={run_number})")
@@ -133,6 +133,10 @@ def run_single_experiment(approach, experiment_id, seed, run_number, add_noise=F
         # Set weighted embeddings if requested
         if use_weighted_embeddings:
             config.use_weighted_embeddings = True
+        
+        # Override num_epochs if specified
+        if num_epochs is not None:
+            config.num_epochs = num_epochs
         
         # Set seed in config for use in Trainer
         config.seed = seed
@@ -472,6 +476,9 @@ def main():
                       help='Override rince_q hyperparameter')
     
     # Output parameters
+    parser.add_argument('--num_epochs', type=int, default=None,
+                      help='Number of training epochs (overrides config default)')
+    
     parser.add_argument('--experiment_id', type=str, default=None,
                       help='Optional experiment ID to use (if not provided, a new one will be generated)')
     parser.add_argument('--output_dir', type=str, default='multi_seed_experiments',
@@ -597,6 +604,7 @@ def main():
                         use_grouping=args.use_grouping,
                         annotators_per_group=args.annotators_per_group,
                         use_weighted_embeddings=args.use_weighted_embeddings,
+                        num_epochs=args.num_epochs,
                         **hyperparams
                     )
                     
