@@ -123,6 +123,11 @@ class ExperimentConfig:
     renegade_percent:   float         = 0.1
     renegade_flip_prob: float         = 0.7
 
+    # Instance-dependent / combined noise (from main)
+    gamma:           float         = 0.5   # instance confusion scaling for combined noise strategy
+    confusion_seed:  int           = 42    # fixed seed for sampling the global confusion vector w
+    embeddings_path: Optional[str] = None  # path to precomputed RoBERTa [CLS] embeddings (.npy)
+
     # -----------------------------------------------------------------------
     # Annotator grouping (unchanged from original)
     # -----------------------------------------------------------------------
