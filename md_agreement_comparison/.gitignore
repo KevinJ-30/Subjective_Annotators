@@ -3,9 +3,11 @@
 **/processed/
 **/results/
 **/logs/
-**/experiments/
+/experiments/
 wandb/
 outputs/
+/HSB-binary/experiments/
+/sentiment_analysis_comparison/experiments/
 
 # Keep .gitkeep files
 !.gitkeep
