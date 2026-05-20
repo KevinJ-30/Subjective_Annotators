@@ -76,7 +76,7 @@ class MDAgreementDataset(Dataset):
         text       = row["question"]
         label      = row["answer_label"]
         annotator  = row["annotator_id"]
-        text_id    = row["original_id"]
+        text_id    = row["uid"]
 
         ann_id = self.annotator2id[annotator]
 
@@ -105,7 +105,7 @@ class MDAgreementDataset(Dataset):
 
     @property
     def text_ids(self):
-        return self.data["original_id"].tolist()
+        return self.data["uid"].tolist()
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +157,7 @@ class LabelDiverseBatchSampler(Sampler):
 
         for idx in range(len(data)):
             row   = data.iloc[idx]
-            tid   = int(row["original_id"])
+            tid   = int(row["uid"])
             label = int(row["answer_label"])
             self.text_groups.setdefault(tid, []).append((idx, label))
 

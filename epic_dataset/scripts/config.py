@@ -113,6 +113,13 @@ class ExperimentConfig:
     min_labels_per_text: int = 2   # LabelDiverseBatchSampler: min distinct labels per text
 
     # -----------------------------------------------------------------------
+    # Confusion / embedding parameters (required by run_experiments_multi_seed)
+    # -----------------------------------------------------------------------
+    gamma:           float         = 0.5
+    confusion_seed:  int           = 42
+    embeddings_path: Optional[str] = None
+
+    # -----------------------------------------------------------------------
     # Noise configuration (unchanged from original)
     # -----------------------------------------------------------------------
     add_noise:          bool          = False
