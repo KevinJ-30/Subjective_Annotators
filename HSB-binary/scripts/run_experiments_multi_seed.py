@@ -38,7 +38,7 @@ sys.path.append(str(project_root))
 from scripts.config import ExperimentConfig
 from scripts.train import Trainer
 from scripts.metrics import evaluate_model
-from scripts.data_loader import HSBDataset
+from scripts.data_loader import MDAgreementDataset
 from transformers import AutoTokenizer
 from torch.utils.data import DataLoader
 
